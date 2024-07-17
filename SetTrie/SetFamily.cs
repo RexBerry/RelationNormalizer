@@ -48,7 +48,7 @@ public sealed class SetFamily<T>
         {
             throw new ArgumentOutOfRangeException(
                 nameof(arrayIndex),
-                "Array index must be positive."
+                "Array index must be nonnegative."
             );
         }
 
