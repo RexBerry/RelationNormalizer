@@ -32,4 +32,8 @@
     <UseWindowsThreadPool>false</UseWindowsThreadPool>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\SetTrie\SetTrie.csproj" />
+  </ItemGroup>
+
 </Project>
