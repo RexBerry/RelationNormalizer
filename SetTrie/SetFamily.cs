@@ -2,6 +2,12 @@
 
 namespace SetTrie;
 
+/// <summary>
+/// A family of sets. This collection is not thread-safe.
+/// Storing sets with several thousand elements may cause a stack overflow.
+/// </summary>
+/// <typeparam name="T">The type of the elements in the stored sets.
+/// Must have meaningful equality, comparison, and hashing.</typeparam>
 public sealed class SetFamily<T>
     : ICollection<IReadOnlySet<T>>,
         IEnumerable<IReadOnlySet<T>>,
@@ -13,14 +19,30 @@ public sealed class SetFamily<T>
     public int Count => _root.Count;
     public bool IsReadOnly => false;
 
+    /// <summary>
+    /// The node at the root of the set trie,
+    /// representing the empty set (if present).
+    /// </summary>
     private readonly SetTrieNode<T> _root;
+    /// <summary>
+    /// The version of this SetFamily, used to track modifications
+    /// and invalidate enumerators.
+    /// </summary>
     private int _version = 0;
 
+    /// <summary>
+    /// Creates a new, empty SetFamily.
+    /// </summary>
     public SetFamily()
     {
         _root = new();
     }
 
+    /// <summary>
+    /// Clones a SetFamily object.
+    /// </summary>
+    /// <param name="other">The SetFamily to clone.</param>
+    /// <exception cref="ArgumentNullException"></exception>
     public SetFamily(SetFamily<T> other)
     {
         ArgumentNullException.ThrowIfNull(other, nameof(other));
@@ -29,16 +51,27 @@ public sealed class SetFamily<T>
     }
 
     public IEnumerator<IReadOnlySet<T>> GetEnumerator() =>
-        EnumerableWrapper(_root.EnumerateDepthFirst(new())).GetEnumerator();
+        WrapEnumerable(_root.EnumerateDepthFirst(new())).GetEnumerator();
 
     IEnumerator IEnumerable.GetEnumerator() =>
         ((IEnumerable<IReadOnlySet<T>>)this).GetEnumerator();
 
+    /// <summary>
+    /// Gets the sets in this SetFamily in depth-first order.
+    /// </summary>
+    /// <returns>An enumerable with an enumerator that
+    /// yields sets in depth-first (lexicographic) order.</returns>
     public IEnumerable<IReadOnlySet<T>> GetSetsDepthFirst() =>
-        EnumerableWrapper(_root.EnumerateDepthFirst(new()));
+        WrapEnumerable(_root.EnumerateDepthFirst(new()));
 
+    /// <summary>
+    /// Gets the sets in this SetFamily in breadth-first order.
+    /// </summary>
+    /// <returns>An enumerable with an enumerator that
+    /// yields sets in breadth-first
+    /// (sorted by size, then lexicographically) order.</returns>
     public IEnumerable<IReadOnlySet<T>> GetSetsBreadthFirst() =>
-        EnumerableWrapper(_root.EnumerateBreadthFirst());
+        WrapEnumerable(_root.EnumerateBreadthFirst());
 
     public void CopyTo(IReadOnlySet<T>[] array, int arrayIndex)
     {
@@ -60,7 +93,10 @@ public sealed class SetFamily<T>
 
     public bool Contains(IReadOnlySet<T> set)
     {
-        ArgumentNullException.ThrowIfNull(set, nameof(set));
+        if (set is null)
+        {
+            return false;
+        }
 
         var elements = SortedArrayFrom(set);
         return _root.Contains(elements, 0);
@@ -145,7 +181,10 @@ public sealed class SetFamily<T>
 
     public bool Add(IReadOnlySet<T> set)
     {
-        ArgumentNullException.ThrowIfNull(set, nameof(set));
+        if (set is null)
+        {
+            return false;
+        }
 
         var oldCount = Count;
         var elements = SortedArrayFrom(set);
@@ -157,7 +196,10 @@ public sealed class SetFamily<T>
 
     public bool Remove(IReadOnlySet<T> set)
     {
-        ArgumentNullException.ThrowIfNull(set, nameof(set));
+        if (set is null)
+        {
+            return false;
+        }
 
         var oldCount = Count;
         var elements = SortedArrayFrom(set);
@@ -252,6 +294,13 @@ public sealed class SetFamily<T>
         }
     }
 
+    /// <summary>
+    /// Checks whether a subset of a given set exists.
+    /// </summary>
+    /// <param name="set">The set to search subsets of.</param>
+    /// <returns>Whether a subset of <c>set</c> exists
+    /// in this SetFamily.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public bool ContainsSubsetOf(IReadOnlySet<T> set)
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
@@ -259,6 +308,13 @@ public sealed class SetFamily<T>
         return _root.ContainsSubsetOf(SortedArrayFrom(set), 0);
     }
 
+    /// <summary>
+    /// Counts the number of existing subsets of a given set.
+    /// </summary>
+    /// <param name="set">The set to count subsets of.</param>
+    /// <returns>The number of subsets of <c>set</c>
+    /// in this SetFamily.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public int CountSubsetsOf(IReadOnlySet<T> set)
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
@@ -266,40 +322,79 @@ public sealed class SetFamily<T>
         return _root.CountSubsetsOf(SortedArrayFrom(set), 0);
     }
 
-    public void RemoveSubsetsOf(IReadOnlySet<T> set)
+    /// <summary>
+    /// Removes all existing subsets of a given set.
+    /// </summary>
+    /// <param name="set">The set to remove subsets of.</param>
+    /// <returns>Whether any modifications occurred.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
+    public bool RemoveSubsetsOf(IReadOnlySet<T> set)
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
         var oldCount = Count;
         _root.RemoveSubsetsOf(SortedArrayFrom(set), 0);
-        UpdateVersion(oldCount);
+        return UpdateVersion(oldCount);
     }
 
+    /// <summary>
+    /// Gets all existing subsets of a given set.
+    /// </summary>
+    /// <param name="set">The set to get subsets of.</param>
+    /// <returns>An enumerable with an enumerator that
+    /// yields all subsets of <c>set</c> in this SetFamily.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<IReadOnlySet<T>> GetSubsetsOf(IReadOnlySet<T> set) =>
         GetSubsetsDepthFirst(set);
 
+    /// <summary>
+    /// Gets all existing subsets of a given set
+    /// in depth-first order.
+    /// </summary>
+    /// <param name="set">The set to get subsets of.</param>
+    /// <returns>An enumerable with an enumerator that
+    /// yields all subsets of <c>set</c> in this SetFamily
+    /// in depth-first (lexicographic) order.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<IReadOnlySet<T>> GetSubsetsDepthFirst(
         IReadOnlySet<T> set
     )
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
-        return EnumerableWrapper(
+        return WrapEnumerable(
             _root.EnumerateSubsetsDepthFirst(new(), SortedArrayFrom(set), 0)
         );
     }
 
+    /// <summary>
+    /// Gets all existing subsets of a given set
+    /// in breadth-first order.
+    /// </summary>
+    /// <param name="set">The set to get subsets of.</param>
+    /// <returns>An enumerable with an enumerator that
+    /// yields all subsets of <c>set</c> in this SetFamily
+    /// in breadth-first (sorted by size, then lexicographically)
+    /// order.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<IReadOnlySet<T>> GetSubsetsBreadthFirst(
         IReadOnlySet<T> set
     )
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
-        return EnumerableWrapper(
+        return WrapEnumerable(
             _root.EnumerateSubsetsBreadthFirst(SortedArrayFrom(set))
         );
     }
 
+    /// <summary>
+    /// Checks whether a superset of a given set exists.
+    /// </summary>
+    /// <param name="set">The set to search supersets of.</param>
+    /// <returns>Whether a superset of <c>set</c>
+    /// exists in this SetFamily.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public bool ContainsSupersetOf(IReadOnlySet<T> set)
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
@@ -307,6 +402,13 @@ public sealed class SetFamily<T>
         return _root.ContainsSupersetOf(SortedArrayFrom(set), 0);
     }
 
+    /// <summary>
+    /// Counts the number of existing supersets of a given set.
+    /// </summary>
+    /// <param name="set">The set to count supersets of.</param>
+    /// <returns>The number of supersets of <c>set</c>
+    /// in this SetFamily.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public int CountSupersetsOf(IReadOnlySet<T> set)
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
@@ -314,40 +416,79 @@ public sealed class SetFamily<T>
         return _root.CountSupersetsOf(SortedArrayFrom(set), 0);
     }
 
-    public void RemoveSupersetsOf(IReadOnlySet<T> set)
+    /// <summary>
+    /// Removes all existing supersets of a given set.
+    /// </summary>
+    /// <param name="set">The set to remove supersets of.</param>
+    /// <returns>Whether any modifications occurred.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
+    public bool RemoveSupersetsOf(IReadOnlySet<T> set)
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
         var oldCount = Count;
         _root.RemoveSupersetsOf(SortedArrayFrom(set), 0);
-        UpdateVersion(oldCount);
+        return UpdateVersion(oldCount);
     }
 
+    /// <summary>
+    /// Gets all existing supersets of a given set.
+    /// </summary>
+    /// <param name="set">The set to get supersets of.</param>
+    /// <returns>An enumerable with an enumerator that
+    /// yields all supersets of <c>set</c> in this SetFamily.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<IReadOnlySet<T>> GetSupersetsOf(IReadOnlySet<T> set) =>
         GetSupersetsDepthFirst(set);
 
+    /// <summary>
+    /// Gets all existing supersets of a given set
+    /// in depth-first order.
+    /// </summary>
+    /// <param name="set">The set to get supersets of.</param>
+    /// <returns>An enumerable with an enumerator that
+    /// yields all supersets of <c>set</c> in this SetFamily
+    /// in depth-first (lexicographic) order.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<IReadOnlySet<T>> GetSupersetsDepthFirst(
         IReadOnlySet<T> set
     )
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
-        return EnumerableWrapper(
+        return WrapEnumerable(
             _root.EnumerateSupersetsDepthFirst(new(), SortedArrayFrom(set), 0)
         );
     }
 
+    /// <summary>
+    /// Gets all existing supersets of a given set
+    /// in breadth-first order.
+    /// </summary>
+    /// <param name="set">The set to get supersets of.</param>
+    /// <returns>An enumerable with an enumerator that
+    /// yields all supersets of <c>set</c> in this SetFamily
+    /// in breadth-first (sorted by size, then lexicographically)
+    /// order.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<IReadOnlySet<T>> GetSupersetsBreadthFirst(
         IReadOnlySet<T> set
     )
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
-        return EnumerableWrapper(
+        return WrapEnumerable(
             _root.EnumerateSupersetsBreadthFirst(SortedArrayFrom(set))
         );
     }
 
+    /// <summary>
+    /// Checks whether a proper subset of a given set exists.
+    /// </summary>
+    /// <param name="set">The set to search proper subsets of.</param>
+    /// <returns>Whether a proper subset of <c>set</c>
+    /// exists in this SetFamily.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public bool ContainsProperSubsetOf(IReadOnlySet<T> set)
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
@@ -355,6 +496,13 @@ public sealed class SetFamily<T>
         return _root.ContainsProperSubsetOf(SortedArrayFrom(set), 0, 0);
     }
 
+    /// <summary>
+    /// Counts the number of existing proper subsets of a given set.
+    /// </summary>
+    /// <param name="set">The set to count proper subsets of.</param>
+    /// <returns>The number of proper subsets of <c>set</c>
+    /// in this SetFamily.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public int CountProperSubsetsOf(IReadOnlySet<T> set)
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
@@ -370,19 +518,41 @@ public sealed class SetFamily<T>
         return count;
     }
 
-    public void RemoveProperSubsetsOf(IReadOnlySet<T> set)
+    /// <summary>
+    /// Removes all existing proper subsets of a given set.
+    /// </summary>
+    /// <param name="set">The set to remove proper subsets of.</param>
+    /// <returns>Whether any modifications occurred.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
+    public bool RemoveProperSubsetsOf(IReadOnlySet<T> set)
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
         var oldCount = Count;
         _root.RemoveProperSubsetsOf(SortedArrayFrom(set), 0, 0);
-        UpdateVersion(oldCount);
+        return UpdateVersion(oldCount);
     }
 
+    /// <summary>
+    /// Gets all existing proper subsets of a given set.
+    /// </summary>
+    /// <param name="set">The set to get proper subsets of.</param>
+    /// <returns>An enumerable with an enumerator that
+    /// yields all proper subsets of <c>set</c> in this SetFamily.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<IReadOnlySet<T>> GetProperSubsetsOf(
         IReadOnlySet<T> set
     ) => GetProperSubsetsDepthFirst(set);
 
+    /// <summary>
+    /// Gets all existing proper subsets of a given set
+    /// in depth-first order.
+    /// </summary>
+    /// <param name="set">The set to get proper subsets of.</param>
+    /// <returns>An enumerable with an enumerator that
+    /// yields all proper subsets of <c>set</c> in this SetFamily
+    /// in depth-first (lexicographic) order.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<IReadOnlySet<T>> GetProperSubsetsDepthFirst(
         IReadOnlySet<T> set
     )
@@ -400,6 +570,16 @@ public sealed class SetFamily<T>
         }
     }
 
+    /// <summary>
+    /// Gets all existing proper subsets of a given set
+    /// in breadth-first order.
+    /// </summary>
+    /// <param name="set">The set to get proper subsets of.</param>
+    /// <returns>An enumerable with an enumerator that
+    /// yields all proper subsets of <c>set</c> in this SetFamily
+    /// in breadth-first (sorted by size, then lexicographically)
+    /// order.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<IReadOnlySet<T>> GetProperSubsetsBreadthFirst(
         IReadOnlySet<T> set
     )
@@ -417,6 +597,13 @@ public sealed class SetFamily<T>
         }
     }
 
+    /// <summary>
+    /// Checks whether a proper superset of a given set exists.
+    /// </summary>
+    /// <param name="set">The set to search proper supersets of.</param>
+    /// <returns>Whether a proper superset of <c>set</c>
+    /// exists in this SetFamily.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public bool ContainsProperSupersetOf(IReadOnlySet<T> set)
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
@@ -424,6 +611,13 @@ public sealed class SetFamily<T>
         return _root.ContainsProperSupersetOf(SortedArrayFrom(set), 0, 0);
     }
 
+    /// <summary>
+    /// Counts the number of existing proper supersets of a given set.
+    /// </summary>
+    /// <param name="set">The set to count proper supersets of.</param>
+    /// <returns>The number of proper supersets of <c>set</c>
+    /// in this SetFamily.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public int CountProperSupersetsOf(IReadOnlySet<T> set)
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
@@ -439,19 +633,41 @@ public sealed class SetFamily<T>
         return count;
     }
 
-    public void RemoveProperSupersetsOf(IReadOnlySet<T> set)
+    /// <summary>
+    /// Removes all existing proper supersets of a given set.
+    /// </summary>
+    /// <param name="set">The set to remove proper supersets of.</param>
+    /// <returns>Whether any modifications occurred.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
+    public bool RemoveProperSupersetsOf(IReadOnlySet<T> set)
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
         var oldCount = Count;
         _root.RemoveProperSupersetsOf(SortedArrayFrom(set), 0, 0);
-        UpdateVersion(oldCount);
+        return UpdateVersion(oldCount);
     }
 
+    /// <summary>
+    /// Gets all existing proper supersets of a given set.
+    /// </summary>
+    /// <param name="set">The set to get proper supersets of.</param>
+    /// <returns>An enumerable with an enumerator that
+    /// yields all proper supersets of <c>set</c> in this SetFamily.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<IReadOnlySet<T>> GetProperSupersetsOf(
         IReadOnlySet<T> set
     ) => GetProperSupersetsDepthFirst(set);
 
+    /// <summary>
+    /// Gets all existing proper supersets of a given set
+    /// in depth-first order.
+    /// </summary>
+    /// <param name="set">The set to get proper supersets of.</param>
+    /// <returns>An enumerable with an enumerator that
+    /// yields all proper supersets of <c>set</c> in this SetFamily
+    /// in depth-first (lexicographic) order.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<IReadOnlySet<T>> GetProperSupersetsDepthFirst(
         IReadOnlySet<T> set
     )
@@ -469,6 +685,16 @@ public sealed class SetFamily<T>
         }
     }
 
+    /// <summary>
+    /// Gets all existing proper supersets of a given set
+    /// in breadth-first order.
+    /// </summary>
+    /// <param name="set">The set to get proper supersets of.</param>
+    /// <returns>An enumerable with an enumerator that
+    /// yields all proper supersets of <c>set</c> in this SetFamily
+    /// in breadth-first (sorted by size, then lexicographically)
+    /// order.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<IReadOnlySet<T>> GetProperSupersetsBreadthFirst(
         IReadOnlySet<T> set
     )
@@ -486,6 +712,13 @@ public sealed class SetFamily<T>
         }
     }
 
+    /// <summary>
+    /// Checks whether a given set is the union of existing sets.
+    /// </summary>
+    /// <param name="set">The set to check.</param>
+    /// <returns>Whether this SetFamily contains a collection of sets
+    /// with a union of <c>set</c>.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public bool ContainsSetsWithUnion(IReadOnlySet<T> set)
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
@@ -512,6 +745,13 @@ public sealed class SetFamily<T>
         return false;
     }
 
+    /// <summary>
+    /// Checks whether a given set is the intersection of existing sets.
+    /// </summary>
+    /// <param name="set">The set to check.</param>
+    /// <returns>Whether this SetFamily contains a collection of sets
+    /// with an intersection of <c>set</c>.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public bool ContainsSetsWithIntersection(IReadOnlySet<T> set)
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
@@ -547,6 +787,15 @@ public sealed class SetFamily<T>
         return false;
     }
 
+    /// <summary>
+    /// Checks whether a given set is the union
+    /// of existing proper subsets.
+    /// </summary>
+    /// <param name="set">The set to check.</param>
+    /// <returns>Whether this SetFamily contains a collection of
+    /// proper subsets of <c>set</c> with
+    /// a union of <c>set</c>.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public bool ContainsProperSubsetsWithUnion(IReadOnlySet<T> set)
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
@@ -572,6 +821,15 @@ public sealed class SetFamily<T>
         return false;
     }
 
+    /// <summary>
+    /// Checks whether a given set is the intersection
+    /// of existing proper supersets.
+    /// </summary>
+    /// <param name="set">The set to check.</param>
+    /// <returns>Whether this SetFamily contains a collection of
+    /// proper supersets of <c>set</c> with
+    /// an intersection of <c>set</c>.</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public bool ContainsProperSupersetsWithIntersection(IReadOnlySet<T> set)
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
@@ -606,7 +864,14 @@ public sealed class SetFamily<T>
         return false;
     }
 
-    public void AddWithMinimalSetsInvariant(IReadOnlySet<T> set)
+    /// <summary>
+    /// Adds a set and maintains the invariant that all sets be
+    /// minimal within this SetFamily (i.e., no existing set is a
+    /// subset of another existing set).
+    /// </summary>
+    /// <param name="set">The set to add.</param>
+    /// <returns>Whether any modifications occurred</returns>
+    public bool AddWithMinimalSetsInvariant(IReadOnlySet<T> set)
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
@@ -614,7 +879,7 @@ public sealed class SetFamily<T>
 
         if (_root.Contains(elements, 0) || _root.ContainsSubsetOf(elements, 0))
         {
-            return;
+            return false;
         }
 
         var oldCount = _root.Count;
@@ -626,10 +891,22 @@ public sealed class SetFamily<T>
         if (changed)
         {
             ++_version;
+            return true;
+        }
+        else
+        {
+            return false;
         }
     }
 
-    public void AddWithMaximalSetsInvariant(IReadOnlySet<T> set)
+    /// <summary>
+    /// Adds a set and maintains the invariant that all sets be
+    /// maximal within this SetFamily (i.e., no existing set is a
+    /// superset of another existing set).
+    /// </summary>
+    /// <param name="set">The set to add.</param>
+    /// <returns>Whether any modifications occurred</returns>
+    public bool AddWithMaximalSetsInvariant(IReadOnlySet<T> set)
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
@@ -640,7 +917,7 @@ public sealed class SetFamily<T>
             || _root.ContainsSupersetOf(elements, 0)
         )
         {
-            return;
+            return false;
         }
 
         var oldCount = _root.Count;
@@ -652,9 +929,20 @@ public sealed class SetFamily<T>
         if (changed)
         {
             ++_version;
+            return true;
+        }
+        else
+        {
+            return false;
         }
     }
 
+    /// <summary>
+    /// Increments the version if modifications were made.
+    /// </summary>
+    /// <param name="oldCount">The count prior to any mutating operation.</param>
+    /// <returns>Whether modifications were made, based on <c>oldCount</c>
+    /// and the current count.</returns>
     private bool UpdateVersion(int oldCount)
     {
         if (Count != oldCount)
@@ -668,7 +956,15 @@ public sealed class SetFamily<T>
         }
     }
 
-    private IEnumerable<IReadOnlySet<T>> EnumerableWrapper(
+    /// <summary>
+    /// Wraps an enumerable of this SetFamily.
+    /// </summary>
+    /// <param name="enumerable">The enumerable to wrap.</param>
+    /// <returns>An enumerable with an enumerator that is automatically
+    /// invalidated when modifications are made.</returns>
+    /// <exception cref="InvalidOperationException">When the enumerator is
+    /// invalidated due to modifications.</exception>
+    private IEnumerable<IReadOnlySet<T>> WrapEnumerable(
         IEnumerable<IReadOnlySet<T>> enumerable
     )
     {
@@ -687,10 +983,22 @@ public sealed class SetFamily<T>
         }
     }
 
+    /// <summary>
+    /// Given a collection of sets,
+    /// creates a new SetFamily object if necessary.
+    /// </summary>
+    /// <param name="source">The collection to copy elements from.</param>
+    /// <returns>A new SetFamily object if <c>source</c> is not a SetFamily,
+    /// otherwise <c>source</c>.</returns>
     private static SetFamily<T> SetFamilyFrom(
         IEnumerable<IReadOnlySet<T>> source
     ) => source is SetFamily<T> sets ? sets : source.ToSetFamily();
 
+    /// <summary>
+    /// Creates a sorted array from a set.
+    /// </summary>
+    /// <param name="set">The set to copy elements from.</param>
+    /// <returns>A sorted array with the same elements as <c>set</c>.</returns>
     private static T[] SortedArrayFrom(IReadOnlySet<T> set)
     {
         var elements = (T[])[.. set];

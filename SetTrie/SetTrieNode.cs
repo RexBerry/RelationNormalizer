@@ -1,18 +1,66 @@
 ﻿namespace SetTrie;
 
+/// <summary>
+/// <para>
+/// A node in a set trie.
+/// </para>
+///
+/// <para>
+/// A set trie is a data structure similar to a trie, with the difference
+/// being that a set trie stores multisets whose elements have a total order
+/// by storing the elements in sorted order.
+/// See the <see href="https://doi.org/10.1007/978-3-642-40511-2_10">
+/// 2013 paper by Savnik, I.</see>
+/// </para>
+///
+/// <para>
+/// This implementation is not
+/// designed to store multisets, and is instead made to be compatible with
+/// <c>IReadOnlySet&lt;T&gt;</c> and <c>HashSet&lt;T&gt;</c>. Internally,
+/// each SetTrieNode uses a <c>SortedDictionary&lt;TKey,TValue&gt;</c>
+/// to store its children.
+/// </para>
+/// </summary>
+/// <typeparam name="T">The type of the elements in the stored sets.
+/// Must have meaningful equality, comparison, and hashing.</typeparam>
 internal sealed class SetTrieNode<T>
     where T : IComparable<T>
 {
+    /// <summary>
+    /// A record type used when creating sets in breadth-first enumerators.
+    /// </summary>
+    /// <typeparam name="TValue">The type of information stored
+    /// (e.g., the value of a SetTrieNode, an index of the input
+    /// array, etc.).</typeparam>
+    /// <param name="Parent">The parent BacktrackingNode of
+    /// this BacktrackingNode, or <c>null</c> if there is none.</param>
+    /// <param name="Value">The value stored in this BacktrackingNode,
+    /// or <c>default</c> if there is no parent.</param>
     private record BacktrackingNode<TValue>(
         BacktrackingNode<TValue>? Parent = null,
         TValue? Value = default
     );
 
+    /// <summary>
+    /// Whether there exists a set whose last element in sorted order
+    /// is represented by this SetTrieNode.
+    /// </summary>
     public bool Last { get; private set; }
+    /// <summary>
+    /// The number of sets contained by this SetTrieNode and its children.
+    /// </summary>
     public int Count { get; private set; }
 
+    /// <summary>
+    /// The child SetTrieNodes (and their corresponding element values)
+    /// of this SetTrieNode.
+    /// </summary>
     private readonly SortedDictionary<T, SetTrieNode<T>> _children;
+    // TODO: Consider using a B(+)Tree for better performance.
 
+    /// <summary>
+    /// Creates a new SetTrieNode containing no sets and with no children.
+    /// </summary>
     internal SetTrieNode()
     {
         Last = false;
@@ -20,6 +68,10 @@ internal sealed class SetTrieNode<T>
         _children = [];
     }
 
+    /// <summary>
+    /// Clones a SetTrieNode object.
+    /// </summary>
+    /// <param name="other">The SetTrieNode to clone.</param>
     internal SetTrieNode(SetTrieNode<T> other)
     {
         Last = other.Last;
@@ -32,6 +84,13 @@ internal sealed class SetTrieNode<T>
         }
     }
 
+    /// <summary>
+    /// Checks whether a set exists.
+    /// </summary>
+    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="index">The index of the current element.</param>
+    /// <returns>Whether the set is contained by
+    /// this SetTrieNode or its children.</returns>
     internal bool Contains(ReadOnlySpan<T> elements, int index)
     {
         if (index == elements.Length)
@@ -49,6 +108,8 @@ internal sealed class SetTrieNode<T>
         return child.Contains(elements, index + 1);
     }
 
+    // Used to implement the interface method of the same name
+    // of the owning object.
     internal bool SetEquals(SetTrieNode<T> other)
     {
         if (
@@ -76,6 +137,8 @@ internal sealed class SetTrieNode<T>
         return true;
     }
 
+    // Used to implement the interface method of the same name
+    // of the owning object.
     internal bool Overlaps(SetTrieNode<T> other)
     {
         if (Last && other.Last)
@@ -104,6 +167,8 @@ internal sealed class SetTrieNode<T>
         return false;
     }
 
+    // Used to implement the interface method of the same name
+    // of the owning object.
     internal bool IsSubsetOf(SetTrieNode<T> other)
     {
         if (
@@ -131,6 +196,8 @@ internal sealed class SetTrieNode<T>
         return true;
     }
 
+    // Used to implement the interface method of the same name
+    // of the owning object.
     internal bool IsSupersetOf(SetTrieNode<T> other)
     {
         if (
@@ -158,6 +225,16 @@ internal sealed class SetTrieNode<T>
         return true;
     }
 
+    /// <summary>
+    /// Gets the sets contained by this SetTrieNode and its children
+    /// in depth-first order.
+    /// </summary>
+    /// <param name="resultElements">The element values of the chain
+    /// of SetTrieNodes from the root of the set trie
+    /// to this SetTrieNode.</param>
+    /// <returns>An enumerable with an enumerator that yields the sets
+    /// contained by this SetTrieNode and its children
+    /// in depth-first order.</returns>
     internal IEnumerable<HashSet<T>> EnumerateDepthFirst(
         Stack<T> resultElements
     )
@@ -180,6 +257,13 @@ internal sealed class SetTrieNode<T>
         }
     }
 
+    /// <summary>
+    /// Gets the sets contained by this SetTrieNode and its children
+    /// in breadth-first order.
+    /// </summary>
+    /// <returns>An enumerable with an enumerator that yields the sets
+    /// contained by this SetTrieNode and its children
+    /// in breadth-first order.</returns>
     internal IEnumerable<HashSet<T>> EnumerateBreadthFirst()
     {
         var nodes = new Queue<(SetTrieNode<T>, BacktrackingNode<T>)>();
@@ -210,12 +294,20 @@ internal sealed class SetTrieNode<T>
         }
     }
 
+    /// <summary>
+    /// Removes all sets from this SetTrieNode.
+    /// </summary>
     public void Clear()
     {
         _children.Clear();
         Count = 0;
     }
 
+    /// <summary>
+    /// Adds a set to the set trie.
+    /// </summary>
+    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="index">The index of the current element.</param>
     internal void Add(ReadOnlySpan<T> elements, int index)
     {
         if (index == elements.Length)
@@ -242,6 +334,11 @@ internal sealed class SetTrieNode<T>
         Count += child.Count - oldCount;
     }
 
+    /// <summary>
+    /// Removes a set from the set trie.
+    /// </summary>
+    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="index">The index of the current element.</param>
     internal void Remove(ReadOnlySpan<T> elements, int index)
     {
         if (index == elements.Length)
@@ -272,6 +369,8 @@ internal sealed class SetTrieNode<T>
         }
     }
 
+    // Used to implement the interface method of the same name
+    // of the owning object.
     internal void UnionWith(SetTrieNode<T> other)
     {
         if (!Last && other.Last)
@@ -294,6 +393,8 @@ internal sealed class SetTrieNode<T>
         }
     }
 
+    // Used to implement the interface method of the same name
+    // of the owning object.
     internal void IntersectWith(SetTrieNode<T> other)
     {
         if (Last && !other.Last)
@@ -338,6 +439,8 @@ internal sealed class SetTrieNode<T>
         }
     }
 
+    // Used to implement the interface method of the same name
+    // of the owning object.
     internal void ExceptWith(SetTrieNode<T> other)
     {
         if (Last && other.Last)
@@ -364,6 +467,8 @@ internal sealed class SetTrieNode<T>
         }
     }
 
+    // Used to implement the interface method of the same name
+    // of the owning object.
     internal bool SymmetricExceptWith(SetTrieNode<T> other)
     {
         if (Count == 0)
@@ -423,6 +528,13 @@ internal sealed class SetTrieNode<T>
         return changed;
     }
 
+    /// <summary>
+    /// Checks whether a subset of a given set exists.
+    /// </summary>
+    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="index">The index of the current element.</param>
+    /// <returns>Whether a subset of the given set is contained by
+    /// this SetTrieNode or its children.</returns>
     internal bool ContainsSubsetOf(ReadOnlySpan<T> elements, int index)
     {
         if (Last)
@@ -453,6 +565,13 @@ internal sealed class SetTrieNode<T>
         return false;
     }
 
+    /// <summary>
+    /// Counts the number of existing subsets of a given set.
+    /// </summary>
+    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="index">The index of the current element.</param>
+    /// <returns>The number of subsets of the given set contained by
+    /// this SetTrieNode and its children.</returns>
     internal int CountSubsetsOf(ReadOnlySpan<T> elements, int index)
     {
         var count = 0;
@@ -482,6 +601,11 @@ internal sealed class SetTrieNode<T>
         return count;
     }
 
+    /// <summary>
+    /// Removes all existing subsets of a given set.
+    /// </summary>
+    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="index">The index of the current element.</param>
     internal void RemoveSubsetsOf(ReadOnlySpan<T> elements, int index)
     {
         if (Last)
@@ -515,6 +639,17 @@ internal sealed class SetTrieNode<T>
         }
     }
 
+    /// <summary>
+    /// Gets the subsets of a given set in depth-first order.
+    /// </summary>
+    /// <param name="resultElements">The element values of the chain
+    /// of SetTrieNodes from the root of the set trie
+    /// to this SetTrieNode.</param>
+    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="index">The index of the current element.</param>
+    /// <returns>An enumerable with an enumerator that yields the
+    /// subsets of the given set contained by this SetTrieNode
+    /// and its children in depth-first order.</returns>
     internal IEnumerable<HashSet<T>> EnumerateSubsetsDepthFirst(
         Stack<T> resultElements,
         T[] elements,
@@ -557,6 +692,13 @@ internal sealed class SetTrieNode<T>
         }
     }
 
+    /// <summary>
+    /// Gets the subsets of a given set in breadth-first order.
+    /// </summary>
+    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <returns>An enumerable with an enumerator that yields the
+    /// subsets of the given set contained by this SetTrieNode
+    /// and its children in breadth-first order.</returns>
     internal IEnumerable<HashSet<T>> EnumerateSubsetsBreadthFirst(T[] elements)
     {
         var nodes =
@@ -607,6 +749,13 @@ internal sealed class SetTrieNode<T>
         }
     }
 
+    /// <summary>
+    /// Checks whether a superset of a given set exists.
+    /// </summary>
+    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="index">The index of the current element.</param>
+    /// <returns>Whether a superset of the given set is contained by
+    /// this SetTrieNode or its children.</returns>
     internal bool ContainsSupersetOf(ReadOnlySpan<T> elements, int index)
     {
         if (index == elements.Length)
@@ -636,6 +785,13 @@ internal sealed class SetTrieNode<T>
         return false;
     }
 
+    /// <summary>
+    /// Counts the number of existing supersets of a given set.
+    /// </summary>
+    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="index">The index of the current element.</param>
+    /// <returns>The number of supersets of the given set contained by
+    /// this SetTrieNode and its children.</returns>
     internal int CountSupersetsOf(ReadOnlySpan<T> elements, int index)
     {
         if (index == elements.Length)
@@ -662,6 +818,11 @@ internal sealed class SetTrieNode<T>
         return count;
     }
 
+    /// <summary>
+    /// Removes all existing supersets of a given set.
+    /// </summary>
+    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="index">The index of the current element.</param>
     internal void RemoveSupersetsOf(ReadOnlySpan<T> elements, int index)
     {
         if (index == elements.Length)
@@ -699,6 +860,17 @@ internal sealed class SetTrieNode<T>
         }
     }
 
+    /// <summary>
+    /// Gets the supersets of a given set in depth-first order.
+    /// </summary>
+    /// <param name="resultElements">The element values of the chain
+    /// of SetTrieNodes from the root of the set trie
+    /// to this SetTrieNode.</param>
+    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="index">The index of the current element.</param>
+    /// <returns>An enumerable with an enumerator that yields the
+    /// supersets of the given set contained by this SetTrieNode
+    /// and its children in depth-first order.</returns>
     internal IEnumerable<HashSet<T>> EnumerateSupersetsDepthFirst(
         Stack<T> resultElements,
         T[] elements,
@@ -744,6 +916,13 @@ internal sealed class SetTrieNode<T>
         }
     }
 
+    /// <summary>
+    /// Gets the supersets of a given set in breadth-first order.
+    /// </summary>
+    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <returns>An enumerable with an enumerator that yields the
+    /// supersets of the given set contained by this SetTrieNode
+    /// and its children in breadth-first order.</returns>
     internal IEnumerable<HashSet<T>> EnumerateSupersetsBreadthFirst(
         T[] elements
     )
@@ -805,6 +984,15 @@ internal sealed class SetTrieNode<T>
         }
     }
 
+    /// <summary>
+    /// Checks whether a proper subset of a given set exists.
+    /// </summary>
+    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="index">The index of the current element.</param>
+    /// <param name="depth">The depth of this SetTrieNode
+    /// in the set trie.</param>
+    /// <returns>Whether a proper subset of the given set is contained by
+    /// this SetTrieNode or its children.</returns>
     internal bool ContainsProperSubsetOf(
         ReadOnlySpan<T> elements,
         int index,
@@ -841,6 +1029,13 @@ internal sealed class SetTrieNode<T>
         return false;
     }
 
+    /// <summary>
+    /// Removes all existing proper subsets of a given set.
+    /// </summary>
+    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="index">The index of the current element.</param>
+    /// <param name="depth">The depth of this SetTrieNode
+    /// in the set trie.</param>
     internal void RemoveProperSubsetsOf(
         ReadOnlySpan<T> elements,
         int index,
@@ -880,6 +1075,15 @@ internal sealed class SetTrieNode<T>
         }
     }
 
+    /// <summary>
+    /// Checks whether a proper superset of a given set exists.
+    /// </summary>
+    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="index">The index of the current element.</param>
+    /// <param name="depth">The depth of this SetTrieNode
+    /// in the set trie.</param>
+    /// <returns>Whether a proper superset of the given set is contained by
+    /// this SetTrieNode or its children.</returns>
     internal bool ContainsProperSupersetOf(
         ReadOnlySpan<T> elements,
         int index,
@@ -914,6 +1118,13 @@ internal sealed class SetTrieNode<T>
         return false;
     }
 
+    /// <summary>
+    /// Removes all existing proper supersets of a given set.
+    /// </summary>
+    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="index">The index of the current element.</param>
+    /// <param name="depth">The depth of this SetTrieNode
+    /// in the set trie.</param>
     internal void RemoveProperSupersetsOf(
         ReadOnlySpan<T> elements,
         int index,
