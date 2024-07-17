@@ -43,14 +43,7 @@ public sealed class SetFamily<T>
     public void CopyTo(IReadOnlySet<T>[] array, int arrayIndex)
     {
         ArgumentNullException.ThrowIfNull(array, nameof(array));
-
-        if (arrayIndex < 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(arrayIndex),
-                "Array index must be nonnegative."
-            );
-        }
+        ArgumentOutOfRangeException.ThrowIfNegative(arrayIndex, nameof(arrayIndex));
 
         if (array.Length - arrayIndex < Count)
         {
