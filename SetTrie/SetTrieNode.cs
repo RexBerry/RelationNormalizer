@@ -16,8 +16,8 @@
 /// <para>
 /// This implementation is not
 /// designed to store multisets, and is instead made to be compatible with
-/// <c>IReadOnlySet&lt;T&gt;</c> and <c>HashSet&lt;T&gt;</c>. Internally,
-/// each SetTrieNode uses a <c>SortedDictionary&lt;TKey,TValue&gt;</c>
+/// <see cref="IReadOnlySet{T}"/> and <see cref="HashSet{T}"/>. Internally,
+/// each SetTrieNode uses a <see cref="SortedDictionary{TKey, TValue}"/>
 /// to store its children.
 /// </para>
 /// </summary>
