@@ -46,6 +46,7 @@ internal sealed class SetTrieNode<T>
     /// is represented by this SetTrieNode.
     /// </summary>
     public bool Last { get; private set; }
+
     /// <summary>
     /// The number of sets contained by this SetTrieNode and its children.
     /// </summary>
@@ -56,6 +57,7 @@ internal sealed class SetTrieNode<T>
     /// of this SetTrieNode.
     /// </summary>
     private readonly SortedDictionary<T, SetTrieNode<T>> _children;
+
     // TODO: Consider using a B(+)Tree for better performance.
 
     /// <summary>

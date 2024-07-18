@@ -24,6 +24,7 @@ public sealed class SetFamily<T>
     /// representing the empty set (if present).
     /// </summary>
     private readonly SetTrieNode<T> _root;
+
     /// <summary>
     /// The version of this SetFamily, used to track modifications
     /// and invalidate enumerators.
@@ -76,7 +77,10 @@ public sealed class SetFamily<T>
     public void CopyTo(IReadOnlySet<T>[] array, int arrayIndex)
     {
         ArgumentNullException.ThrowIfNull(array, nameof(array));
-        ArgumentOutOfRangeException.ThrowIfNegative(arrayIndex, nameof(arrayIndex));
+        ArgumentOutOfRangeException.ThrowIfNegative(
+            arrayIndex,
+            nameof(arrayIndex)
+        );
 
         if (array.Length - arrayIndex < Count)
         {
@@ -949,7 +953,9 @@ public sealed class SetFamily<T>
     /// while maintaining the minimal sets invariant (i.e., such that no set
     /// in the result is a subset of another set in the result).</returns>
     /// <exception cref="ArgumentNullException"></exception>
-    public SetFamily<T> UnionPairsOfSetsAndKeepMinimalSets(IEnumerable<IReadOnlySet<T>> other)
+    public SetFamily<T> UnionPairsOfSetsAndKeepMinimalSets(
+        IEnumerable<IReadOnlySet<T>> other
+    )
     {
         ArgumentNullException.ThrowIfNull(other, nameof(other));
 
@@ -958,7 +964,9 @@ public sealed class SetFamily<T>
 
         var largeFamily = sets.Count > Count ? sets : this;
         var smallFamily = sets.Count <= Count ? sets : this;
-        var setsInSmallFamily = smallFamily._root.EnumerateBreadthFirst().ToArray();
+        var setsInSmallFamily = smallFamily
+            ._root.EnumerateBreadthFirst()
+            .ToArray();
 
         foreach (var set in largeFamily._root.EnumerateBreadthFirst())
         {
@@ -992,7 +1000,9 @@ public sealed class SetFamily<T>
     /// while maintaining the maximal sets invariant (i.e., such that no set
     /// in the result is a superset of another set in the result).</returns>
     /// <exception cref="ArgumentNullException"></exception>
-    public SetFamily<T> UnionPairsOfSetsAndKeepMaximalSets(IEnumerable<IReadOnlySet<T>> other)
+    public SetFamily<T> UnionPairsOfSetsAndKeepMaximalSets(
+        IEnumerable<IReadOnlySet<T>> other
+    )
     {
         ArgumentNullException.ThrowIfNull(other, nameof(other));
 
@@ -1001,7 +1011,9 @@ public sealed class SetFamily<T>
 
         var largeFamily = sets.Count > Count ? sets : this;
         var smallFamily = sets.Count <= Count ? sets : this;
-        var setsInSmallFamily = smallFamily._root.EnumerateBreadthFirst().ToArray();
+        var setsInSmallFamily = smallFamily
+            ._root.EnumerateBreadthFirst()
+            .ToArray();
 
         foreach (var set in largeFamily._root.EnumerateBreadthFirst())
         {
