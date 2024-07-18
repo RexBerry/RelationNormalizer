@@ -938,6 +938,85 @@ public sealed class SetFamily<T>
     }
 
     /// <summary>
+    /// Gets the SetFamily of all minimal sets from the unions
+    /// of all pairs of sets in the Cartesian product
+    /// of this SetFamily and another family of sets.
+    /// </summary>
+    /// <param name="other">The other family of sets.</param>
+    /// <returns>A SetFamily constructed by iterating every pair of sets
+    /// with one set from this SetFamily and the other set from <c>other</c>
+    /// and adding the union of the two sets to the resulting SetFamily
+    /// while maintaining the minimal sets invariant (i.e., such that no set
+    /// in the result is a subset of another set in the result).</returns>
+    public SetFamily<T> UnionPairsOfSetsAndKeepMinimalSets(IEnumerable<IReadOnlySet<T>> other)
+    {
+        ArgumentNullException.ThrowIfNull(other, nameof(other));
+
+        var sets = SetFamilyFrom(other);
+        var result = new SetFamily<T>();
+
+        var largeFamily = sets.Count > Count ? sets : this;
+        var smallFamily = sets.Count <= Count ? sets : this;
+        var setsInSmallFamily = smallFamily._root.EnumerateBreadthFirst().ToArray();
+
+        foreach (var set in largeFamily._root.EnumerateBreadthFirst())
+        {
+            if (result.Contains(set) || result.ContainsSubsetOf(set))
+            {
+                continue;
+            }
+
+            foreach (var otherSet in setsInSmallFamily)
+            {
+                var largeSet = set.Count > otherSet.Count ? set : otherSet;
+                var smallSet = set.Count <= otherSet.Count ? set : otherSet;
+                var union = new HashSet<T>(largeSet);
+                union.UnionWith(smallSet);
+                result.AddWithMinimalSetsInvariant(union);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Gets the SetFamily of all maximal sets from the unions
+    /// of all pairs of sets in the Cartesian product
+    /// of this SetFamily and another family of sets.
+    /// </summary>
+    /// <param name="other">The other family of sets.</param>
+    /// <returns>A SetFamily constructed by iterating every pair of sets
+    /// with one set from this SetFamily and the other set from <c>other</c>
+    /// and adding the union of the two sets to the resulting SetFamily
+    /// while maintaining the maximal sets invariant (i.e., such that no set
+    /// in the result is a superset of another set in the result).</returns>
+    public SetFamily<T> UnionPairsOfSetsAndKeepMaximalSets(IEnumerable<IReadOnlySet<T>> other)
+    {
+        ArgumentNullException.ThrowIfNull(other, nameof(other));
+
+        var sets = SetFamilyFrom(other);
+        var result = new SetFamily<T>();
+
+        var largeFamily = sets.Count > Count ? sets : this;
+        var smallFamily = sets.Count <= Count ? sets : this;
+        var setsInSmallFamily = smallFamily._root.EnumerateBreadthFirst().ToArray();
+
+        foreach (var set in largeFamily._root.EnumerateBreadthFirst())
+        {
+            foreach (var otherSet in setsInSmallFamily)
+            {
+                var largeSet = set.Count > otherSet.Count ? set : otherSet;
+                var smallSet = set.Count <= otherSet.Count ? set : otherSet;
+                var union = new HashSet<T>(largeSet);
+                union.UnionWith(smallSet);
+                result.AddWithMaximalSetsInvariant(union);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// Increments the version if modifications were made.
     /// </summary>
     /// <param name="oldCount">The count prior to any mutating operation.</param>
@@ -1001,7 +1080,7 @@ public sealed class SetFamily<T>
     /// <returns>A sorted array with the same elements as <c>set</c>.</returns>
     private static T[] SortedArrayFrom(IReadOnlySet<T> set)
     {
-        var elements = (T[])[.. set];
+        var elements = set.ToArray();
         Array.Sort(elements);
         return elements;
     }
