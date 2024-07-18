@@ -948,6 +948,7 @@ public sealed class SetFamily<T>
     /// and adding the union of the two sets to the resulting SetFamily
     /// while maintaining the minimal sets invariant (i.e., such that no set
     /// in the result is a subset of another set in the result).</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public SetFamily<T> UnionPairsOfSetsAndKeepMinimalSets(IEnumerable<IReadOnlySet<T>> other)
     {
         ArgumentNullException.ThrowIfNull(other, nameof(other));
@@ -990,6 +991,7 @@ public sealed class SetFamily<T>
     /// and adding the union of the two sets to the resulting SetFamily
     /// while maintaining the maximal sets invariant (i.e., such that no set
     /// in the result is a superset of another set in the result).</returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public SetFamily<T> UnionPairsOfSetsAndKeepMaximalSets(IEnumerable<IReadOnlySet<T>> other)
     {
         ArgumentNullException.ThrowIfNull(other, nameof(other));
