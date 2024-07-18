@@ -947,7 +947,7 @@ public sealed class SetFamily<T>
     /// of this SetFamily and another family of sets.
     /// </summary>
     /// <param name="other">The other family of sets.</param>
-    /// <returns>A SetFamily constructed by iterating every pair of sets
+    /// <returns>A SetFamily created by iterating every pair of sets
     /// with one set from this SetFamily and the other set from <c>other</c>
     /// and adding the union of the two sets to the resulting SetFamily
     /// while maintaining the minimal sets invariant (i.e., such that no set
@@ -994,7 +994,7 @@ public sealed class SetFamily<T>
     /// of this SetFamily and another family of sets.
     /// </summary>
     /// <param name="other">The other family of sets.</param>
-    /// <returns>A SetFamily constructed by iterating every pair of sets
+    /// <returns>A SetFamily created by iterating every pair of sets
     /// with one set from this SetFamily and the other set from <c>other</c>
     /// and adding the union of the two sets to the resulting SetFamily
     /// while maintaining the maximal sets invariant (i.e., such that no set
