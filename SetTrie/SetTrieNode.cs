@@ -1,4 +1,6 @@
-﻿namespace SetTrie;
+﻿using SetTrie.Accessors;
+
+namespace SetTrie;
 
 /// <summary>
 /// A node in a set trie.
@@ -239,9 +241,8 @@ internal sealed class SetTrieNode<TKey, TValue, TStore, TAccessor>
 
             if (!node._children.TryGetValue(element, out var child))
             {
-                throw new KeyNotFoundException(
-                    "The given key was not present."
-                );
+                value = default!;
+                return false;
             }
 
             node = child;
@@ -983,7 +984,7 @@ internal sealed class SetTrieNode<TKey, TValue, TStore, TAccessor>
     /// and its children in depth-first order.</returns>
     internal IEnumerable<
         KeyValuePair<HashSet<TKey>, TValue>
-    > EnumerateSubsetsDepthFirst(
+    > EnumerateSubsetEntriesDepthFirst(
         Stack<TKey> resultElements,
         TKey[] elements,
         int index
@@ -1016,7 +1017,7 @@ internal sealed class SetTrieNode<TKey, TValue, TStore, TAccessor>
             resultElements.Push(element);
 
             foreach (
-                var entry in child.EnumerateSubsetsDepthFirst(
+                var entry in child.EnumerateSubsetEntriesDepthFirst(
                     resultElements,
                     elements,
                     i + 1
@@ -1090,7 +1091,7 @@ internal sealed class SetTrieNode<TKey, TValue, TStore, TAccessor>
     /// and its children in breadth-first order.</returns>
     internal IEnumerable<
         KeyValuePair<HashSet<TKey>, TValue>
-    > EnumerateSubsetsBreadthFirst(TKey[] elements)
+    > EnumerateSubsetEntriesBreadthFirst(TKey[] elements)
     {
         var nodes =
             new Queue<(
@@ -1319,7 +1320,7 @@ internal sealed class SetTrieNode<TKey, TValue, TStore, TAccessor>
     /// and its children in depth-first order.</returns>
     internal IEnumerable<
         KeyValuePair<HashSet<TKey>, TValue>
-    > EnumerateSupersetsDepthFirst(
+    > EnumerateSupersetEntriesDepthFirst(
         Stack<TKey> resultElements,
         TKey[] elements,
         int index
@@ -1350,7 +1351,7 @@ internal sealed class SetTrieNode<TKey, TValue, TStore, TAccessor>
             resultElements.Push(element);
 
             foreach (
-                var entry in child.EnumerateSupersetsDepthFirst(
+                var entry in child.EnumerateSupersetEntriesDepthFirst(
                     resultElements,
                     elements,
                     nextIndex
@@ -1425,7 +1426,7 @@ internal sealed class SetTrieNode<TKey, TValue, TStore, TAccessor>
     /// and its children in breadth-first order.</returns>
     internal IEnumerable<
         KeyValuePair<HashSet<TKey>, TValue>
-    > EnumerateSupersetsBreadthFirst(TKey[] elements)
+    > EnumerateSupersetEntriesBreadthFirst(TKey[] elements)
     {
         var nodes =
             new Queue<(

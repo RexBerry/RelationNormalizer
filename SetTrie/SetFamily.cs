@@ -369,7 +369,7 @@ public sealed class SetFamily<T>
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
         return WrapEnumerable(
-            _root.EnumerateSubsetsDepthFirst(
+            _root.EnumerateSubsetEntriesDepthFirst(
                 new(),
                 SetUtils.SortedArrayFrom(set),
                 0
@@ -394,7 +394,9 @@ public sealed class SetFamily<T>
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
         return WrapEnumerable(
-            _root.EnumerateSubsetsBreadthFirst(SetUtils.SortedArrayFrom(set))
+            _root.EnumerateSubsetEntriesBreadthFirst(
+                SetUtils.SortedArrayFrom(set)
+            )
         );
     }
 
@@ -467,7 +469,7 @@ public sealed class SetFamily<T>
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
         return WrapEnumerable(
-            _root.EnumerateSupersetsDepthFirst(
+            _root.EnumerateSupersetEntriesDepthFirst(
                 new(),
                 SetUtils.SortedArrayFrom(set),
                 0
@@ -492,7 +494,9 @@ public sealed class SetFamily<T>
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
         return WrapEnumerable(
-            _root.EnumerateSupersetsBreadthFirst(SetUtils.SortedArrayFrom(set))
+            _root.EnumerateSupersetEntriesBreadthFirst(
+                SetUtils.SortedArrayFrom(set)
+            )
         );
     }
 
@@ -755,7 +759,9 @@ public sealed class SetFamily<T>
         var union = new HashSet<T>();
 
         foreach (
-            var (subset, _) in _root.EnumerateSubsetsBreadthFirst(elements)
+            var (subset, _) in _root.EnumerateSubsetEntriesBreadthFirst(
+                elements
+            )
         )
         {
             union.UnionWith(subset);
@@ -790,7 +796,9 @@ public sealed class SetFamily<T>
         var intersection = (HashSet<T>?)null;
 
         foreach (
-            var (superset, _) in _root.EnumerateSupersetsBreadthFirst(elements)
+            var (superset, _) in _root.EnumerateSupersetEntriesBreadthFirst(
+                elements
+            )
         )
         {
             if (intersection is null)
@@ -828,7 +836,9 @@ public sealed class SetFamily<T>
         var union = new HashSet<T>();
 
         foreach (
-            var (subset, _) in _root.EnumerateSubsetsBreadthFirst(elements)
+            var (subset, _) in _root.EnumerateSubsetEntriesBreadthFirst(
+                elements
+            )
         )
         {
             if (subset.Count == elements.Length)
@@ -864,7 +874,9 @@ public sealed class SetFamily<T>
         var intersection = (HashSet<T>?)null;
 
         foreach (
-            var (superset, _) in _root.EnumerateSupersetsBreadthFirst(elements)
+            var (superset, _) in _root.EnumerateSupersetEntriesBreadthFirst(
+                elements
+            )
         )
         {
             if (superset.Count == elements.Length)
@@ -896,7 +908,7 @@ public sealed class SetFamily<T>
     /// subset of another existing set).
     /// </summary>
     /// <param name="set">The set to add.</param>
-    /// <returns>Whether any modifications occurred</returns>
+    /// <returns>Whether any modifications occurred.</returns>
     public bool AddWithMinimalSetsInvariant(IReadOnlySet<T> set)
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
@@ -931,7 +943,7 @@ public sealed class SetFamily<T>
     /// superset of another existing set).
     /// </summary>
     /// <param name="set">The set to add.</param>
-    /// <returns>Whether any modifications occurred</returns>
+    /// <returns>Whether any modifications occurred.</returns>
     public bool AddWithMaximalSetsInvariant(IReadOnlySet<T> set)
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));

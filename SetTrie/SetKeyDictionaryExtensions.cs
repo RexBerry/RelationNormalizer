@@ -19,7 +19,7 @@ public static class SetKeyDictionaryExtensions
 
         foreach (var (set, value) in source)
         {
-            setKeyDict.Add(set, value);
+            setKeyDict[set] = value;
         }
 
         return setKeyDict;
@@ -42,7 +42,7 @@ public static class SetKeyDictionaryExtensions
 
         foreach (var (set, value) in source)
         {
-            setKeyDict.Add(set, value);
+            setKeyDict[set] = value;
         }
 
         return setKeyDict;

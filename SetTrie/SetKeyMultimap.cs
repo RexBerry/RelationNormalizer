@@ -5,59 +5,50 @@ using SetTrie.Utils;
 namespace SetTrie;
 
 /// <summary>
-/// A dictionary whose keys are sets. This collection is not thread-safe.
+/// A multimap whose keys are sets. This collection is not thread-safe.
 /// Storing set keys with several thousand elements may cause a stack overflow.
 /// </summary>
 /// <typeparam name="TKey">The type of the elements in the set keys.
 /// Must have meaningful equality, comparison, and hashing.</typeparam>
 /// <typeparam name="TValue">The type of the values associated with the
-/// set keys.</typeparam>
-public class SetKeyDictionary<TKey, TValue>
+/// set keys. Must have meaningful equality and hashing.</typeparam>
+public class SetKeyMultimap<TKey, TValue>
     : ICollection<KeyValuePair<IReadOnlySet<TKey>, TValue>>,
-        IDictionary<IReadOnlySet<TKey>, TValue>,
         IEnumerable<KeyValuePair<IReadOnlySet<TKey>, TValue>>,
-        IReadOnlyCollection<KeyValuePair<IReadOnlySet<TKey>, TValue>>,
-        IReadOnlyDictionary<IReadOnlySet<TKey>, TValue>
+        IEnumerable,
+        IReadOnlyCollection<KeyValuePair<IReadOnlySet<TKey>, TValue>>
     where TKey : IComparable<TKey>
 {
     public int Count => _root.Count;
     public bool IsReadOnly => false;
 
-    public TValue this[IReadOnlySet<TKey> key]
+    /// <summary>
+    /// Gets all values associated with a given set key.
+    /// </summary>
+    /// <param name="key">The set key.</param>
+    /// <returns>The set of all values associated with <c>key</c>.</returns>
+    /// <exception cref="KeyNotFoundException"></exception>
+    public IReadOnlySet<TValue> this[IReadOnlySet<TKey> key]
     {
         get
         {
             ArgumentNullException.ThrowIfNull(key, nameof(key));
 
-            return _root.Get(SetUtils.SortedArrayFrom(key));
-        }
-        set
-        {
-            ArgumentNullException.ThrowIfNull(key, nameof(key));
-
             var elements = SetUtils.SortedArrayFrom(key);
-            _root.Set(elements, 0, value);
-            ++_version;
+            return _root.Get(elements);
         }
     }
 
-    IEnumerable<IReadOnlySet<TKey>> IReadOnlyDictionary<
-        IReadOnlySet<TKey>,
-        TValue
-    >.Keys => GetEntriesDepthFirst().Select(entry => entry.Key);
+    /// <summary>
+    /// Gets all keys in this SetKeyMultimap.
+    /// </summary>
+    public IEnumerable<IReadOnlySet<TKey>> Keys =>
+        GetEntriesDepthFirst().Select(entry => entry.Key);
 
-    ICollection<IReadOnlySet<TKey>> IDictionary<
-        IReadOnlySet<TKey>,
-        TValue
-    >.Keys => GetEntriesDepthFirst().Select(entry => entry.Key).ToArray();
-
-    IEnumerable<TValue> IReadOnlyDictionary<
-        IReadOnlySet<TKey>,
-        TValue
-    >.Values => GetValuesDepthFirst();
-
-    ICollection<TValue> IDictionary<IReadOnlySet<TKey>, TValue>.Values =>
-        this.Select(entry => entry.Value).ToArray();
+    /// <summary>
+    /// Gets all values in this SetKeyMultimap.
+    /// </summary>
+    public IEnumerable<TValue> Values => GetValuesDepthFirst();
 
     /// <summary>
     /// The node at the root of the set trie,
@@ -66,30 +57,30 @@ public class SetKeyDictionary<TKey, TValue>
     private readonly SetTrieNode<
         TKey,
         TValue,
-        TValue,
-        SetKeyDictionaryAccessor<TValue>
+        HashSet<TValue>,
+        SetKeyMultimapAccessor<TValue>
     > _root;
 
     /// <summary>
-    /// The version of this SetKeyDictionary, used to track modifications
+    /// The version of this SetKeyMultimap, used to track modifications
     /// and invalidate enumerators.
     /// </summary>
     private int _version = 0;
 
     /// <summary>
-    /// Constructs a new, empty SetKeyDictionary.
+    /// Constructs a new, empty SetKeyMultimap.
     /// </summary>
-    public SetKeyDictionary()
+    public SetKeyMultimap()
     {
         _root = new();
     }
 
     /// <summary>
-    /// Clones a SetKeyDictionary object.
+    /// Clones a SetKeyMultimap object.
     /// </summary>
-    /// <param name="other">The SetKeyDictionary to clone.</param>
+    /// <param name="other">The SetKeyMultimap to clone.</param>
     /// <exception cref="ArgumentNullException"></exception>
-    public SetKeyDictionary(SetKeyDictionary<TKey, TValue> other)
+    public SetKeyMultimap(SetKeyMultimap<TKey, TValue> other)
     {
         ArgumentNullException.ThrowIfNull(other, nameof(other));
 
@@ -171,15 +162,39 @@ public class SetKeyDictionary<TKey, TValue>
         item.Key is not null
         && _root.Contains(SetUtils.SortedArrayFrom(item.Key), item.Value);
 
+    /// <summary>
+    /// Checks whether a key exists.
+    /// </summary>
+    /// <param name="key">The key to search for.</param>
+    /// <returns>Whether <c>key</c> exists as a key in this
+    /// SetKeyMultimap.</returns>
     public bool ContainsKey(IReadOnlySet<TKey> key) =>
         key is not null && _root.ContainsKey(SetUtils.SortedArrayFrom(key));
 
-    public bool TryGetValue(IReadOnlySet<TKey> key, out TValue value)
+    /// <summary>
+    /// Gets the value associated with the specified key.
+    /// </summary>
+    /// <param name="key">The key of the value to get.</param>
+    /// <param name="value">When this method returns, contains the value
+    /// associated with the specified key, if the key is found; otherwise,
+    /// the default value for the type of the <c>value</c> parameter.
+    /// This parameter is passed uninitialized.</param>
+    /// <returns><c>true</c> if the <see cref="SetKeyMultimap{TKey, TValue}"/>
+    /// contains an element with the specified key;
+    /// otherwise, <c>false</c>.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// <c>key</c> is <c>null</c>.</exception>
+    public bool TryGetValue(
+        IReadOnlySet<TKey> key,
+        out IReadOnlySet<TValue> value
+    )
     {
         ArgumentNullException.ThrowIfNull(key, nameof(key));
 
         var elements = SetUtils.SortedArrayFrom(key);
-        return _root.TryGetValue(elements, out value);
+        var exists = _root.TryGetValue(elements, out var valueSet);
+        value = valueSet;
+        return exists;
     }
 
     public void Clear()
@@ -189,26 +204,31 @@ public class SetKeyDictionary<TKey, TValue>
         UpdateVersion(oldCount);
     }
 
-    public void Add(IReadOnlySet<TKey> key, TValue value)
+    /// <summary>
+    /// Adds a key-value pair.
+    /// </summary>
+    /// <param name="key">The key of the key-value pair to add.</param>
+    /// <param name="value">The value of the key-value pair to add.</param>
+    /// <returns>Whether any modifications occurred.</returns>
+    public bool Add(IReadOnlySet<TKey> key, TValue value)
     {
         ArgumentNullException.ThrowIfNull(key, nameof(key));
 
         var oldCount = Count;
         var elements = SetUtils.SortedArrayFrom(key);
         _root.Add(elements, 0, value);
-
-        if (!UpdateVersion(oldCount))
-        {
-            throw new ArgumentException(
-                "An item with the same key has already been added."
-            );
-        }
+        return UpdateVersion(oldCount);
     }
 
     public void Add(KeyValuePair<IReadOnlySet<TKey>, TValue> item) =>
         Add(item.Key, item.Value);
 
-    public bool Remove(IReadOnlySet<TKey> key)
+    /// <summary>
+    /// Removes a key and all of its associated values.
+    /// </summary>
+    /// <param name="key">The key to remove.</param>
+    /// <returns>Whether any modifications occurred.</returns>
+    public bool RemoveKey(IReadOnlySet<TKey> key)
     {
         ArgumentNullException.ThrowIfNull(key, nameof(key));
 
@@ -218,27 +238,31 @@ public class SetKeyDictionary<TKey, TValue>
         return UpdateVersion(oldCount);
     }
 
-    public bool Remove(KeyValuePair<IReadOnlySet<TKey>, TValue> item)
+    /// <summary>
+    /// Removes a key-value pair.
+    /// </summary>
+    /// <param name="key">The key of the key-value pair to remove.</param>
+    /// <param name="value">The value of the key-value pair to remove.</param>
+    /// <returns>Whether any modifications occurred.</returns>
+    public bool Remove(IReadOnlySet<TKey> key, TValue value)
     {
-        var (set, value) = item;
-
-        if (set is null)
-        {
-            return false;
-        }
+        ArgumentNullException.ThrowIfNull(key, nameof(key));
 
         var oldCount = Count;
-        var elements = SetUtils.SortedArrayFrom(set);
+        var elements = SetUtils.SortedArrayFrom(key);
         _root.Remove(elements, 0, value);
         return UpdateVersion(oldCount);
     }
+
+    public bool Remove(KeyValuePair<IReadOnlySet<TKey>, TValue> item) =>
+        item.Key is not null && Remove(item.Key, item.Value);
 
     /// <summary>
     /// Checks whether a subset of a given set exists.
     /// </summary>
     /// <param name="set">The set to search subsets of.</param>
     /// <returns>Whether a subset of <c>set</c> exists
-    /// in this SetKeyDictionary.</returns>
+    /// in this SetKeyMultimap.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public bool ContainsSubsetOf(IReadOnlySet<TKey> set)
     {
@@ -252,7 +276,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// </summary>
     /// <param name="set">The set to count subsets of.</param>
     /// <returns>The number of subsets of <c>set</c>
-    /// in this SetKeyDictionary.</returns>
+    /// in this SetKeyMultimap.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public int CountSubsetsOf(IReadOnlySet<TKey> set)
     {
@@ -283,7 +307,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// <param name="set">The set.</param>
     /// <returns>An enumerable with an enumerator that
     /// yields all key-value pairs whose key is a subset of
-    /// <c>set</c> in this SetKeyDictionary.</returns>
+    /// <c>set</c> in this SetKeyMultimap.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<
         KeyValuePair<IReadOnlySet<TKey>, TValue>
@@ -297,7 +321,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// <param name="set">The set.</param>
     /// <returns>An enumerable with an enumerator that
     /// yields all key-value pairs whose key is a subset of
-    /// <c>set</c> in this SetKeyDictionary
+    /// <c>set</c> in this SetKeyMultimap
     /// in depth-first (lexicographic) order.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<
@@ -322,7 +346,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// <param name="set">The set.</param>
     /// <returns>An enumerable with an enumerator that
     /// yields all key-value pairs whose key is a subset of
-    /// <c>set</c> in this SetKeyDictionary in breadth-first
+    /// <c>set</c> in this SetKeyMultimap in breadth-first
     /// (sorted by size, then lexicographically) order.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<
@@ -345,7 +369,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// <param name="set">The set.</param>
     /// <returns>An enumerable with an enumerator that
     /// yields all values associated with a subset of
-    /// <c>set</c> in this SetKeyDictionary.</returns>
+    /// <c>set</c> in this SetKeyMultimap.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<TValue> GetSubsetValuesOf(IReadOnlySet<TKey> set) =>
         GetSubsetValuesDepthFirst(set);
@@ -357,7 +381,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// <param name="set">The set.</param>
     /// <returns>An enumerable with an enumerator that
     /// yields all values associated with a subset of
-    /// <c>set</c> in this SetKeyDictionary
+    /// <c>set</c> in this SetKeyMultimap
     /// in depth-first (lexicographic) order.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<TValue> GetSubsetValuesDepthFirst(
@@ -381,7 +405,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// <param name="set">The set.</param>
     /// <returns>An enumerable with an enumerator that
     /// yields all values associated with a subset of
-    /// <c>set</c> in this SetKeyDictionary in breadth-first
+    /// <c>set</c> in this SetKeyMultimap in breadth-first
     /// (sorted by size, then lexicographically) order.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<TValue> GetSubsetValuesBreadthFirst(
@@ -402,7 +426,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// </summary>
     /// <param name="set">The set to search supersets of.</param>
     /// <returns>Whether a superset of <c>set</c>
-    /// exists in this SetKeyDictionary.</returns>
+    /// exists in this SetKeyMultimap.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public bool ContainsSupersetOf(IReadOnlySet<TKey> set)
     {
@@ -416,7 +440,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// </summary>
     /// <param name="set">The set to count supersets of.</param>
     /// <returns>The number of supersets of <c>set</c>
-    /// in this SetKeyDictionary.</returns>
+    /// in this SetKeyMultimap.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public int CountSupersetsOf(IReadOnlySet<TKey> set)
     {
@@ -447,7 +471,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// <param name="set">The set.</param>
     /// <returns>An enumerable with an enumerator that
     /// yields all key-value pairs whose key is a superset of
-    /// <c>set</c> in this SetKeyDictionary.</returns>
+    /// <c>set</c> in this SetKeyMultimap.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<
         KeyValuePair<IReadOnlySet<TKey>, TValue>
@@ -461,7 +485,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// <param name="set">The set.</param>
     /// <returns>An enumerable with an enumerator that
     /// yields all key-value pairs whose key is a superset of
-    /// <c>set</c> in this SetKeyDictionary
+    /// <c>set</c> in this SetKeyMultimap
     /// in depth-first (lexicographic) order.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<
@@ -486,7 +510,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// <param name="set">The set.</param>
     /// <returns>An enumerable with an enumerator that
     /// yields all key-value pairs whose key is a superset of
-    /// <c>set</c> in this SetKeyDictionary in breadth-first
+    /// <c>set</c> in this SetKeyMultimap in breadth-first
     /// (sorted by size, then lexicographically) order.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<
@@ -509,7 +533,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// <param name="set">The set.</param>
     /// <returns>An enumerable with an enumerator that
     /// yields all values associated with a superset of
-    /// <c>set</c> in this SetKeyDictionary.</returns>
+    /// <c>set</c> in this SetKeyMultimap.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<TValue> GetSupersetValuesOf(IReadOnlySet<TKey> set) =>
         GetSupersetValuesDepthFirst(set);
@@ -521,7 +545,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// <param name="set">The set.</param>
     /// <returns>An enumerable with an enumerator that
     /// yields all values associated with a superset of
-    /// <c>set</c> in this SetKeyDictionary
+    /// <c>set</c> in this SetKeyMultimap
     /// in depth-first (lexicographic) order.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<TValue> GetSupersetValuesDepthFirst(
@@ -545,7 +569,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// <param name="set">The set.</param>
     /// <returns>An enumerable with an enumerator that
     /// yields all values associated with a superset of
-    /// <c>set</c> in this SetKeyDictionary in breadth-first
+    /// <c>set</c> in this SetKeyMultimap in breadth-first
     /// (sorted by size, then lexicographically) order.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<TValue> GetSupersetValuesBreadthFirst(
@@ -566,7 +590,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// </summary>
     /// <param name="set">The set to search proper subsets of.</param>
     /// <returns>Whether a proper subset of <c>set</c>
-    /// exists in this SetKeyDictionary.</returns>
+    /// exists in this SetKeyMultimap.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public bool ContainsProperSubsetOf(IReadOnlySet<TKey> set)
     {
@@ -584,7 +608,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// </summary>
     /// <param name="set">The set to count proper subsets of.</param>
     /// <returns>The number of proper subsets of <c>set</c>
-    /// in this SetKeyDictionary.</returns>
+    /// in this SetKeyMultimap.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public int CountProperSubsetsOf(IReadOnlySet<TKey> set)
     {
@@ -623,7 +647,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// <param name="set">The set.</param>
     /// <returns>An enumerable with an enumerator that
     /// yields all key-value pairs whose key is a proper subset of
-    /// <c>set</c> in this SetKeyDictionary.</returns>
+    /// <c>set</c> in this SetKeyMultimap.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<
         KeyValuePair<IReadOnlySet<TKey>, TValue>
@@ -637,7 +661,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// <param name="set">The set.</param>
     /// <returns>An enumerable with an enumerator that
     /// yields all key-value pairs whose key is a proper subset of
-    /// <c>set</c> in this SetKeyDictionary
+    /// <c>set</c> in this SetKeyMultimap
     /// in depth-first (lexicographic) order.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<
@@ -666,7 +690,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// <param name="set">The set.</param>
     /// <returns>An enumerable with an enumerator that
     /// yields all key-value pairs whose key is a proper subset of
-    /// <c>set</c> in this SetKeyDictionary in breadth-first
+    /// <c>set</c> in this SetKeyMultimap in breadth-first
     /// (sorted by size, then lexicographically) order.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<
@@ -693,7 +717,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// </summary>
     /// <param name="set">The set to search proper supersets of.</param>
     /// <returns>Whether a proper superset of <c>set</c>
-    /// exists in this SetKeyDictionary.</returns>
+    /// exists in this SetKeyMultimap.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public bool ContainsProperSupersetOf(IReadOnlySet<TKey> set)
     {
@@ -711,7 +735,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// </summary>
     /// <param name="set">The set to count proper supersets of.</param>
     /// <returns>The number of proper supersets of <c>set</c>
-    /// in this SetKeyDictionary.</returns>
+    /// in this SetKeyMultimap.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public int CountProperSupersetsOf(IReadOnlySet<TKey> set)
     {
@@ -750,7 +774,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// <param name="set">The set.</param>
     /// <returns>An enumerable with an enumerator that
     /// yields all key-value pairs whose key is a proper superset of
-    /// <c>set</c> in this SetKeyDictionary.</returns>
+    /// <c>set</c> in this SetKeyMultimap.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<
         KeyValuePair<IReadOnlySet<TKey>, TValue>
@@ -764,7 +788,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// <param name="set">The set.</param>
     /// <returns>An enumerable with an enumerator that
     /// yields all key-value pairs whose key is a proper superset of
-    /// <c>set</c> in this SetKeyDictionary
+    /// <c>set</c> in this SetKeyMultimap
     /// in depth-first (lexicographic) order.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<
@@ -793,7 +817,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// <param name="set">The set.</param>
     /// <returns>An enumerable with an enumerator that
     /// yields all key-value pairs whose key is a proper superset of
-    /// <c>set</c> in this SetKeyDictionary in breadth-first
+    /// <c>set</c> in this SetKeyMultimap in breadth-first
     /// (sorted by size, then lexicographically) order.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public IEnumerable<
@@ -819,7 +843,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// Checks whether a given set is the union of existing sets.
     /// </summary>
     /// <param name="set">The set to check.</param>
-    /// <returns>Whether this SetKeyDictionary contains a collection of sets
+    /// <returns>Whether this SetKeyMultimap contains a collection of sets
     /// with a union of <c>set</c>.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public bool ContainsSetsWithUnion(IReadOnlySet<TKey> set)
@@ -856,7 +880,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// Checks whether a given set is the intersection of existing sets.
     /// </summary>
     /// <param name="set">The set to check.</param>
-    /// <returns>Whether this SetKeyDictionary contains a collection of sets
+    /// <returns>Whether this SetKeyMultimap contains a collection of sets
     /// with an intersection of <c>set</c>.</returns>
     /// <exception cref="ArgumentNullException"></exception>
     public bool ContainsSetsWithIntersection(IReadOnlySet<TKey> set)
@@ -901,7 +925,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// of existing proper subsets.
     /// </summary>
     /// <param name="set">The set to check.</param>
-    /// <returns>Whether this SetKeyDictionary contains a collection of
+    /// <returns>Whether this SetKeyMultimap contains a collection of
     /// proper subsets of <c>set</c> with
     /// a union of <c>set</c>.</returns>
     /// <exception cref="ArgumentNullException"></exception>
@@ -939,7 +963,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// of existing proper supersets.
     /// </summary>
     /// <param name="set">The set to check.</param>
-    /// <returns>Whether this SetKeyDictionary contains a collection of
+    /// <returns>Whether this SetKeyMultimap contains a collection of
     /// proper supersets of <c>set</c> with
     /// an intersection of <c>set</c>.</returns>
     /// <exception cref="ArgumentNullException"></exception>
@@ -981,7 +1005,7 @@ public class SetKeyDictionary<TKey, TValue>
 
     /// <summary>
     /// Adds a set and maintains the invariant that all sets be
-    /// minimal within this SetKeyDictionary (i.e., no existing set is a
+    /// minimal within this SetKeyMultimap (i.e., no existing set is a
     /// subset of another existing set).
     /// </summary>
     /// <param name="set">The set to add.</param>
@@ -995,13 +1019,21 @@ public class SetKeyDictionary<TKey, TValue>
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
         var elements = SetUtils.SortedArrayFrom(set);
+        int oldCount;
 
-        if (_root.ContainsKey(elements) || _root.ContainsSubsetOf(elements, 0))
+        if (_root.ContainsKey(elements))
+        {
+            oldCount = Count;
+            _root.Add(elements, 0, value);
+            return UpdateVersion(oldCount);
+        }
+
+        if (_root.ContainsSubsetOf(elements, 0))
         {
             return false;
         }
 
-        var oldCount = _root.Count;
+        oldCount = _root.Count;
         _root.RemoveSupersetsOf(elements, 0);
         var changed = Count != oldCount;
         _root.Add(elements, 0, value);
@@ -1020,7 +1052,7 @@ public class SetKeyDictionary<TKey, TValue>
 
     /// <summary>
     /// Adds a set and maintains the invariant that all sets be
-    /// maximal within this SetKeyDictionary (i.e., no existing set is a
+    /// maximal within this SetKeyMultimap (i.e., no existing set is a
     /// superset of another existing set).
     /// </summary>
     /// <param name="set">The set to add.</param>
@@ -1034,16 +1066,21 @@ public class SetKeyDictionary<TKey, TValue>
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
         var elements = SetUtils.SortedArrayFrom(set);
+        int oldCount;
 
-        if (
-            _root.ContainsKey(elements)
-            || _root.ContainsSupersetOf(elements, 0)
-        )
+        if (_root.ContainsKey(elements))
+        {
+            oldCount = Count;
+            _root.Add(elements, 0, value);
+            return UpdateVersion(oldCount);
+        }
+
+        if (_root.ContainsSupersetOf(elements, 0))
         {
             return false;
         }
 
-        var oldCount = _root.Count;
+        oldCount = _root.Count;
         _root.RemoveSubsetsOf(elements, 0);
         var changed = Count != oldCount;
         _root.Add(elements, 0, value);
@@ -1080,11 +1117,11 @@ public class SetKeyDictionary<TKey, TValue>
     }
 
     /// <summary>
-    /// Wraps an enumerable of the key-value pairs in this SetKeyDictionary.
+    /// Wraps an enumerable of the key-value pairs in this SetKeyMultimap.
     /// </summary>
     /// <param name="enumerable">The enumerable to wrap.</param>
     /// <returns>An enumerable with an enumerator that yields the
-    /// key-value pairs in thie SetKeyDictionary and is automatically
+    /// key-value pairs in thie SetKeyMultimap and is automatically
     /// invalidated when modifications are made.</returns>
     /// <exception cref="InvalidOperationException">When the enumerator is
     /// invalidated due to modifications.</exception>
@@ -1110,11 +1147,11 @@ public class SetKeyDictionary<TKey, TValue>
     }
 
     /// <summary>
-    /// Wraps an enumerable of the values in this SetKeyDictionary.
+    /// Wraps an enumerable of the values in this SetKeyMultimap.
     /// </summary>
     /// <param name="enumerable">The enumerable to wrap.</param>
     /// <returns>An enumerable with an enumerator that yields the
-    /// values in this SetKeyDictionary and is automatically
+    /// values in this SetKeyMultimap and is automatically
     /// invalidated when modifications are made.</returns>
     /// <exception cref="InvalidOperationException">When the enumerator is
     /// invalidated due to modifications.</exception>

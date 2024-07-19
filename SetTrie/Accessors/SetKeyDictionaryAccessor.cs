@@ -1,11 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using SetTrie.Utils;
-
-namespace SetTrie.Accessors;
+﻿namespace SetTrie.Accessors;
 
 internal class SetKeyDictionaryAccessor<T> : ISetTrieAccessor<T, T>
 {
@@ -50,6 +43,11 @@ internal class SetKeyDictionaryAccessor<T> : ISetTrieAccessor<T, T>
         ref int count
     )
     {
+        if (!(value?.Equals(storage) ?? storage is null))
+        {
+            return;
+        }
+
         _ = value;
         storage = default;
         hasValue = false;
