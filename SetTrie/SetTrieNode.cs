@@ -126,7 +126,39 @@ internal sealed class SetTrieNode<TKey, TValue, TStore, TAccessor>
         {
             if (index == elements.Length)
             {
-                return _hasValue;
+                return node._hasValue;
+            }
+
+            var element = elements[index];
+
+            if (!node._children.TryGetValue(element, out var child))
+            {
+                return false;
+            }
+
+            node = child;
+            ++index;
+        }
+    }
+
+    /// <summary>
+    /// Checks whether a key-value pair exists.
+    /// </summary>
+    /// <param name="elements">The elements of the set key in sorted order.</param>
+    /// <param name="value">The value to search for.</param>
+    /// <returns>Whether the set key exists in this SetTrieNode
+    /// or its children.</returns>
+    internal bool Contains(ReadOnlySpan<TKey> elements, TValue value)
+    {
+        var node = this;
+        var index = 0;
+
+        while (true)
+        {
+            if (index == elements.Length)
+            {
+                return node._hasValue
+                    && TAccessor.Contains(node._storage!, value);
             }
 
             var element = elements[index];
@@ -157,14 +189,50 @@ internal sealed class SetTrieNode<TKey, TValue, TStore, TAccessor>
         {
             if (index == elements.Length)
             {
-                if (!_hasValue)
+                if (!node._hasValue)
                 {
                     throw new KeyNotFoundException(
                         "The given key was not present."
                     );
                 }
 
-                return _storage!;
+                return node._storage!;
+            }
+
+            var element = elements[index];
+
+            if (!node._children.TryGetValue(element, out var child))
+            {
+                throw new KeyNotFoundException(
+                    "The given key was not present."
+                );
+            }
+
+            node = child;
+            ++index;
+        }
+    }
+
+    // Used to implement the IDictionary<TKey, TValue> method of the same name.
+    internal bool TryGetValue(ReadOnlySpan<TKey> elements, out TStore value)
+    {
+        var node = this;
+        var index = 0;
+
+        while (true)
+        {
+            if (index == elements.Length)
+            {
+                if (node._hasValue)
+                {
+                    value = node._storage!;
+                    return true;
+                }
+                else
+                {
+                    value = default!;
+                    return false;
+                }
             }
 
             var element = elements[index];
