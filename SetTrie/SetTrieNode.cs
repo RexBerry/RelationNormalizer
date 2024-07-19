@@ -1,10 +1,9 @@
 ﻿namespace SetTrie;
 
 /// <summary>
-/// <para>
 /// A node in a set trie.
-/// </para>
-///
+/// </summary>
+/// <remarks>
 /// <para>
 /// A set trie is a data structure similar to a trie, with the difference
 /// being that a set trie stores multisets whose elements have a total order
@@ -25,7 +24,7 @@
 /// This implementation can also be used to implement a map or multimap
 /// with sets as keys.
 /// </para>
-/// </summary>
+/// </remarks>
 /// <typeparam name="TKey">The type of the elements in the set keys.
 /// Must have meaningful equality, comparison, and hashing.</typeparam>
 /// <typeparam name="TValue">The type of values associated with
