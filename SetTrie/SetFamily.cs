@@ -1,4 +1,6 @@
 ﻿using System.Collections;
+using SetTrie.Accessors;
+using SetTrie.Utils;
 
 namespace SetTrie;
 
@@ -23,7 +25,7 @@ public sealed class SetFamily<T>
     /// The node at the root of the set trie,
     /// representing the empty set (if present).
     /// </summary>
-    private readonly SetTrieNode<T> _root;
+    private readonly SetTrieNode<T, Nothing, Nothing, SetFamilyAccessor> _root;
 
     /// <summary>
     /// The version of this SetFamily, used to track modifications
@@ -102,15 +104,15 @@ public sealed class SetFamily<T>
             return false;
         }
 
-        var elements = SortedArrayFrom(set);
-        return _root.Contains(elements, 0);
+        var elements = SetUtils.SortedArrayFrom(set);
+        return _root.ContainsKey(elements);
     }
 
     public bool SetEquals(IEnumerable<IReadOnlySet<T>> other)
     {
         ArgumentNullException.ThrowIfNull(other, nameof(other));
 
-        return _root.SetEquals(SetFamilyFrom(other)._root);
+        return _root.SetTrieEquals(SetFamilyFrom(other)._root);
     }
 
     public bool Overlaps(IEnumerable<IReadOnlySet<T>> other)
@@ -191,8 +193,8 @@ public sealed class SetFamily<T>
         }
 
         var oldCount = Count;
-        var elements = SortedArrayFrom(set);
-        _root.Add(elements, 0);
+        var elements = SetUtils.SortedArrayFrom(set);
+        _root.Add(elements, 0, default);
         return UpdateVersion(oldCount);
     }
 
@@ -206,7 +208,7 @@ public sealed class SetFamily<T>
         }
 
         var oldCount = Count;
-        var elements = SortedArrayFrom(set);
+        var elements = SetUtils.SortedArrayFrom(set);
         _root.Remove(elements, 0);
         return UpdateVersion(oldCount);
     }
@@ -219,14 +221,14 @@ public sealed class SetFamily<T>
 
         if (other is SetFamily<T> sets)
         {
-            _root.UnionWith(sets._root);
+            _root.AddFrom(sets._root);
         }
         else
         {
             foreach (var set in other)
             {
-                var elements = SortedArrayFrom(set);
-                _root.Add(elements, 0);
+                var elements = SetUtils.SortedArrayFrom(set);
+                _root.Add(elements, 0, default);
             }
         }
 
@@ -277,15 +279,15 @@ public sealed class SetFamily<T>
         {
             foreach (var set in other)
             {
-                var elements = SortedArrayFrom(set);
+                var elements = SetUtils.SortedArrayFrom(set);
 
-                if (_root.Contains(elements, 0))
+                if (_root.ContainsKey(elements))
                 {
                     _root.Remove(elements, 0);
                 }
                 else
                 {
-                    _root.Add(elements, 0);
+                    _root.Add(elements, 0, default);
                 }
 
                 changed = true;
@@ -309,7 +311,7 @@ public sealed class SetFamily<T>
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
-        return _root.ContainsSubsetOf(SortedArrayFrom(set), 0);
+        return _root.ContainsSubsetOf(SetUtils.SortedArrayFrom(set), 0);
     }
 
     /// <summary>
@@ -323,7 +325,7 @@ public sealed class SetFamily<T>
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
-        return _root.CountSubsetsOf(SortedArrayFrom(set), 0);
+        return _root.CountSubsetValuesOf(SetUtils.SortedArrayFrom(set), 0);
     }
 
     /// <summary>
@@ -337,7 +339,7 @@ public sealed class SetFamily<T>
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
         var oldCount = Count;
-        _root.RemoveSubsetsOf(SortedArrayFrom(set), 0);
+        _root.RemoveSubsetsOf(SetUtils.SortedArrayFrom(set), 0);
         return UpdateVersion(oldCount);
     }
 
@@ -367,7 +369,11 @@ public sealed class SetFamily<T>
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
         return WrapEnumerable(
-            _root.EnumerateSubsetsDepthFirst(new(), SortedArrayFrom(set), 0)
+            _root.EnumerateSubsetsDepthFirst(
+                new(),
+                SetUtils.SortedArrayFrom(set),
+                0
+            )
         );
     }
 
@@ -388,7 +394,7 @@ public sealed class SetFamily<T>
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
         return WrapEnumerable(
-            _root.EnumerateSubsetsBreadthFirst(SortedArrayFrom(set))
+            _root.EnumerateSubsetsBreadthFirst(SetUtils.SortedArrayFrom(set))
         );
     }
 
@@ -403,7 +409,7 @@ public sealed class SetFamily<T>
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
-        return _root.ContainsSupersetOf(SortedArrayFrom(set), 0);
+        return _root.ContainsSupersetOf(SetUtils.SortedArrayFrom(set), 0);
     }
 
     /// <summary>
@@ -417,7 +423,7 @@ public sealed class SetFamily<T>
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
-        return _root.CountSupersetsOf(SortedArrayFrom(set), 0);
+        return _root.CountSupersetValuesOf(SetUtils.SortedArrayFrom(set), 0);
     }
 
     /// <summary>
@@ -431,7 +437,7 @@ public sealed class SetFamily<T>
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
         var oldCount = Count;
-        _root.RemoveSupersetsOf(SortedArrayFrom(set), 0);
+        _root.RemoveSupersetsOf(SetUtils.SortedArrayFrom(set), 0);
         return UpdateVersion(oldCount);
     }
 
@@ -461,7 +467,11 @@ public sealed class SetFamily<T>
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
         return WrapEnumerable(
-            _root.EnumerateSupersetsDepthFirst(new(), SortedArrayFrom(set), 0)
+            _root.EnumerateSupersetsDepthFirst(
+                new(),
+                SetUtils.SortedArrayFrom(set),
+                0
+            )
         );
     }
 
@@ -482,7 +492,7 @@ public sealed class SetFamily<T>
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
         return WrapEnumerable(
-            _root.EnumerateSupersetsBreadthFirst(SortedArrayFrom(set))
+            _root.EnumerateSupersetsBreadthFirst(SetUtils.SortedArrayFrom(set))
         );
     }
 
@@ -497,7 +507,11 @@ public sealed class SetFamily<T>
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
-        return _root.ContainsProperSubsetOf(SortedArrayFrom(set), 0, 0);
+        return _root.ContainsProperSubsetOf(
+            SetUtils.SortedArrayFrom(set),
+            0,
+            0
+        );
     }
 
     /// <summary>
@@ -511,10 +525,10 @@ public sealed class SetFamily<T>
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
-        var elements = SortedArrayFrom(set);
-        var count = _root.CountSubsetsOf(elements, 0);
+        var elements = SetUtils.SortedArrayFrom(set);
+        var count = _root.CountSubsetValuesOf(elements, 0);
 
-        if (_root.Contains(elements, 0))
+        if (_root.ContainsKey(elements))
         {
             --count;
         }
@@ -533,7 +547,7 @@ public sealed class SetFamily<T>
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
         var oldCount = Count;
-        _root.RemoveProperSubsetsOf(SortedArrayFrom(set), 0, 0);
+        _root.RemoveProperSubsetsOf(SetUtils.SortedArrayFrom(set), 0, 0);
         return UpdateVersion(oldCount);
     }
 
@@ -612,7 +626,11 @@ public sealed class SetFamily<T>
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
-        return _root.ContainsProperSupersetOf(SortedArrayFrom(set), 0, 0);
+        return _root.ContainsProperSupersetOf(
+            SetUtils.SortedArrayFrom(set),
+            0,
+            0
+        );
     }
 
     /// <summary>
@@ -626,10 +644,10 @@ public sealed class SetFamily<T>
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
-        var elements = SortedArrayFrom(set);
-        var count = _root.CountSupersetsOf(elements, 0);
+        var elements = SetUtils.SortedArrayFrom(set);
+        var count = _root.CountSupersetValuesOf(elements, 0);
 
-        if (_root.Contains(elements, 0))
+        if (_root.ContainsKey(elements))
         {
             --count;
         }
@@ -648,7 +666,7 @@ public sealed class SetFamily<T>
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
         var oldCount = Count;
-        _root.RemoveProperSupersetsOf(SortedArrayFrom(set), 0, 0);
+        _root.RemoveProperSupersetsOf(SetUtils.SortedArrayFrom(set), 0, 0);
         return UpdateVersion(oldCount);
     }
 
@@ -727,16 +745,18 @@ public sealed class SetFamily<T>
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
-        var elements = SortedArrayFrom(set);
+        var elements = SetUtils.SortedArrayFrom(set);
 
-        if (_root.Contains(elements, 0))
+        if (_root.ContainsKey(elements))
         {
             return true;
         }
 
         var union = new HashSet<T>();
 
-        foreach (var subset in _root.EnumerateSubsetsBreadthFirst(elements))
+        foreach (
+            var (subset, _) in _root.EnumerateSubsetsBreadthFirst(elements)
+        )
         {
             union.UnionWith(subset);
 
@@ -760,9 +780,9 @@ public sealed class SetFamily<T>
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
-        var elements = SortedArrayFrom(set);
+        var elements = SetUtils.SortedArrayFrom(set);
 
-        if (_root.Contains(elements, 0))
+        if (_root.ContainsKey(elements))
         {
             return true;
         }
@@ -770,7 +790,7 @@ public sealed class SetFamily<T>
         var intersection = (HashSet<T>?)null;
 
         foreach (
-            var superset in _root.EnumerateSupersetsBreadthFirst(elements)
+            var (superset, _) in _root.EnumerateSupersetsBreadthFirst(elements)
         )
         {
             if (intersection is null)
@@ -804,10 +824,12 @@ public sealed class SetFamily<T>
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
-        var elements = SortedArrayFrom(set);
+        var elements = SetUtils.SortedArrayFrom(set);
         var union = new HashSet<T>();
 
-        foreach (var subset in _root.EnumerateSubsetsBreadthFirst(elements))
+        foreach (
+            var (subset, _) in _root.EnumerateSubsetsBreadthFirst(elements)
+        )
         {
             if (subset.Count == elements.Length)
             {
@@ -838,11 +860,11 @@ public sealed class SetFamily<T>
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
-        var elements = SortedArrayFrom(set);
+        var elements = SetUtils.SortedArrayFrom(set);
         var intersection = (HashSet<T>?)null;
 
         foreach (
-            var superset in _root.EnumerateSupersetsBreadthFirst(elements)
+            var (superset, _) in _root.EnumerateSupersetsBreadthFirst(elements)
         )
         {
             if (superset.Count == elements.Length)
@@ -879,9 +901,9 @@ public sealed class SetFamily<T>
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
-        var elements = SortedArrayFrom(set);
+        var elements = SetUtils.SortedArrayFrom(set);
 
-        if (_root.Contains(elements, 0) || _root.ContainsSubsetOf(elements, 0))
+        if (_root.ContainsKey(elements) || _root.ContainsSubsetOf(elements, 0))
         {
             return false;
         }
@@ -889,7 +911,7 @@ public sealed class SetFamily<T>
         var oldCount = _root.Count;
         _root.RemoveSupersetsOf(elements, 0);
         var changed = Count != oldCount;
-        _root.Add(elements, 0);
+        _root.Add(elements, 0, default);
         changed = changed || Count != oldCount;
 
         if (changed)
@@ -914,10 +936,10 @@ public sealed class SetFamily<T>
     {
         ArgumentNullException.ThrowIfNull(set, nameof(set));
 
-        var elements = SortedArrayFrom(set);
+        var elements = SetUtils.SortedArrayFrom(set);
 
         if (
-            _root.Contains(elements, 0)
+            _root.ContainsKey(elements)
             || _root.ContainsSupersetOf(elements, 0)
         )
         {
@@ -927,7 +949,7 @@ public sealed class SetFamily<T>
         var oldCount = _root.Count;
         _root.RemoveSubsetsOf(elements, 0);
         var changed = Count != oldCount;
-        _root.Add(elements, 0);
+        _root.Add(elements, 0, default);
         changed = changed || Count != oldCount;
 
         if (changed)
@@ -966,9 +988,10 @@ public sealed class SetFamily<T>
         var smallFamily = sets.Count <= Count ? sets : this;
         var setsInSmallFamily = smallFamily
             ._root.EnumerateBreadthFirst()
+            .Select(entry => entry.Key)
             .ToArray();
 
-        foreach (var set in largeFamily._root.EnumerateBreadthFirst())
+        foreach (var (set, _) in largeFamily._root.EnumerateBreadthFirst())
         {
             if (result.Contains(set) || result.ContainsSubsetOf(set))
             {
@@ -1013,9 +1036,10 @@ public sealed class SetFamily<T>
         var smallFamily = sets.Count <= Count ? sets : this;
         var setsInSmallFamily = smallFamily
             ._root.EnumerateBreadthFirst()
+            .Select(entry => entry.Key)
             .ToArray();
 
-        foreach (var set in largeFamily._root.EnumerateBreadthFirst())
+        foreach (var (set, _) in largeFamily._root.EnumerateBreadthFirst())
         {
             foreach (var otherSet in setsInSmallFamily)
             {
@@ -1053,17 +1077,18 @@ public sealed class SetFamily<T>
     /// Wraps an enumerable of this SetFamily.
     /// </summary>
     /// <param name="enumerable">The enumerable to wrap.</param>
-    /// <returns>An enumerable with an enumerator that is automatically
+    /// <returns>An enumerable with an enumerator that discards the
+    /// meaningless value in the key-value pair and is automatically
     /// invalidated when modifications are made.</returns>
     /// <exception cref="InvalidOperationException">When the enumerator is
     /// invalidated due to modifications.</exception>
     private IEnumerable<IReadOnlySet<T>> WrapEnumerable(
-        IEnumerable<IReadOnlySet<T>> enumerable
+        IEnumerable<KeyValuePair<HashSet<T>, Nothing>> enumerable
     )
     {
         var beginVersion = _version;
 
-        foreach (var set in enumerable)
+        foreach (var (set, _) in enumerable)
         {
             if (_version != beginVersion)
             {
@@ -1086,16 +1111,4 @@ public sealed class SetFamily<T>
     private static SetFamily<T> SetFamilyFrom(
         IEnumerable<IReadOnlySet<T>> source
     ) => source is SetFamily<T> sets ? sets : source.ToSetFamily();
-
-    /// <summary>
-    /// Creates a sorted array from a set.
-    /// </summary>
-    /// <param name="set">The set to copy elements from.</param>
-    /// <returns>A sorted array with the same elements as <c>set</c>.</returns>
-    private static T[] SortedArrayFrom(IReadOnlySet<T> set)
-    {
-        var elements = set.ToArray();
-        Array.Sort(elements);
-        return elements;
-    }
 }

@@ -20,43 +20,67 @@
 /// each SetTrieNode uses a <see cref="SortedDictionary{TKey, TValue}"/>
 /// to store its children.
 /// </para>
+///
+/// <para>
+/// This implementation can also be used to implement a map or multimap
+/// with sets as keys.
+/// </para>
 /// </summary>
-/// <typeparam name="T">The type of the elements in the stored sets.
+/// <typeparam name="TKey">The type of the elements in the set keys.
 /// Must have meaningful equality, comparison, and hashing.</typeparam>
-internal sealed class SetTrieNode<T>
-    where T : IComparable<T>
+/// <typeparam name="TValue">The type of values associated with
+/// the set keys.</typeparam>
+/// <typeparam name="TStore">The type of values internally stored in
+/// the nodes. This would differ from <c>TKey</c> in a multimap.</typeparam>
+/// <typeparam name="TAccessor">A class used to access the values in
+/// the nodes.</typeparam>
+internal sealed class SetTrieNode<TKey, TValue, TStore, TAccessor>
+    where TKey : IComparable<TKey>
+    where TAccessor : ISetTrieAccessor<TValue, TStore>
 {
     /// <summary>
-    /// A record type used when creating sets in breadth-first enumerators.
+    /// A record type used when constructing sets in breadth-first enumerators.
     /// </summary>
-    /// <typeparam name="TValue">The type of information stored
+    /// <typeparam name="T">The type of information stored
     /// (e.g., the value of a SetTrieNode, an index of the input
     /// array, etc.).</typeparam>
     /// <param name="Parent">The parent BacktrackingNode of
     /// this BacktrackingNode, or <c>null</c> if there is none.</param>
     /// <param name="Value">The value stored in this BacktrackingNode,
     /// or <c>default</c> if there is no parent.</param>
-    private record BacktrackingNode<TValue>(
-        BacktrackingNode<TValue>? Parent = null,
-        TValue? Value = default
+    private record BacktrackingNode<T>(
+        BacktrackingNode<T>? Parent = null,
+        T? Value = default
     );
 
     /// <summary>
-    /// Whether there exists a set whose last element in sorted order
-    /// is represented by this SetTrieNode.
+    /// The number of values stored in this SetTrieNode and its children.
     /// </summary>
-    public bool Last { get; private set; }
+    public int Count => _count;
 
     /// <summary>
-    /// The number of sets contained by this SetTrieNode and its children.
+    /// Whether this SetTrieNode is storing a value.
     /// </summary>
-    public int Count { get; private set; }
+    private bool _hasValue;
+
+    /// <summary>
+    /// The number of values stored in this SetTrieNode and its children.
+    /// </summary>
+    private int _count;
+
+    /// <summary>
+    /// The value storage of this SetTrieNode.
+    /// </summary>
+    private TStore? _storage;
 
     /// <summary>
     /// The child SetTrieNodes (and their corresponding element values)
     /// of this SetTrieNode.
     /// </summary>
-    private readonly SortedDictionary<T, SetTrieNode<T>> _children;
+    private readonly SortedDictionary<
+        TKey,
+        SetTrieNode<TKey, TValue, TStore, TAccessor>
+    > _children;
 
     // TODO: Consider using a B(+)Tree for better performance.
 
@@ -65,8 +89,9 @@ internal sealed class SetTrieNode<T>
     /// </summary>
     internal SetTrieNode()
     {
-        Last = false;
-        Count = 0;
+        _hasValue = false;
+        _count = 0;
+        _storage = default;
         _children = [];
     }
 
@@ -74,10 +99,11 @@ internal sealed class SetTrieNode<T>
     /// Clones a SetTrieNode object.
     /// </summary>
     /// <param name="other">The SetTrieNode to clone.</param>
-    internal SetTrieNode(SetTrieNode<T> other)
+    internal SetTrieNode(SetTrieNode<TKey, TValue, TStore, TAccessor> other)
     {
-        Last = other.Last;
-        Count = other.Count;
+        _hasValue = other._hasValue;
+        _count = other._count;
+        _storage = _hasValue ? TAccessor.Clone(other._storage!) : default;
         _children = [];
 
         foreach (var (element, otherChild) in other._children)
@@ -87,38 +113,95 @@ internal sealed class SetTrieNode<T>
     }
 
     /// <summary>
-    /// Checks whether a set exists.
+    /// Checks whether a set key exists.
     /// </summary>
-    /// <param name="elements">The elements of the set in sorted order.</param>
-    /// <param name="index">The index of the current element.</param>
-    /// <returns>Whether the set is contained by
-    /// this SetTrieNode or its children.</returns>
-    internal bool Contains(ReadOnlySpan<T> elements, int index)
+    /// <param name="elements">The elements of the set key in sorted order.</param>
+    /// <returns>Whether the set key exists in this SetTrieNode
+    /// or its children.</returns>
+    internal bool ContainsKey(ReadOnlySpan<TKey> elements)
     {
-        if (index == elements.Length)
+        var node = this;
+        var index = 0;
+
+        while (true)
         {
-            return Last;
+            if (index == elements.Length)
+            {
+                return _hasValue;
+            }
+
+            var element = elements[index];
+
+            if (!node._children.TryGetValue(element, out var child))
+            {
+                return false;
+            }
+
+            node = child;
+            ++index;
         }
+    }
 
-        var element = elements[index];
+    /// <summary>
+    /// Gets the value storage associated with a set key.
+    /// </summary>
+    /// <param name="elements">The elements of the set key in sorted order.</param>
+    /// <returns>The value storage associated with the set represented by
+    /// <c>elements</c>.</returns>
+    /// <exception cref="KeyNotFoundException"></exception>
+    internal TStore Get(ReadOnlySpan<TKey> elements)
+    {
+        var node = this;
+        var index = 0;
 
-        if (!_children.TryGetValue(element, out var child))
+        while (true)
+        {
+            if (index == elements.Length)
+            {
+                if (!_hasValue)
+                {
+                    throw new KeyNotFoundException(
+                        "The given key was not present."
+                    );
+                }
+
+                return _storage!;
+            }
+
+            var element = elements[index];
+
+            if (!node._children.TryGetValue(element, out var child))
+            {
+                throw new KeyNotFoundException(
+                    "The given key was not present."
+                );
+            }
+
+            node = child;
+            ++index;
+        }
+    }
+
+    /// <summary>
+    /// Whether this SetTrieNode is equal to another SetTrieNode.
+    /// </summary>
+    /// <param name="other">The other SetTrieNode.</param>
+    /// <returns>Whether the two SetTrieNodes have the same set keys and the
+    /// same values associated with those keys.</returns>
+    internal bool SetTrieEquals(
+        SetTrieNode<TKey, TValue, TStore, TAccessor> other
+    )
+    {
+        if (
+            _hasValue != other._hasValue
+            || _count != other._count
+            || _children.Count != other._children.Count
+        )
         {
             return false;
         }
 
-        return child.Contains(elements, index + 1);
-    }
-
-    // Used to implement the interface method of the same name
-    // of the owning object.
-    internal bool SetEquals(SetTrieNode<T> other)
-    {
-        if (
-            Last != other.Last
-            || Count != other.Count
-            || _children.Count != other._children.Count
-        )
+        if (_hasValue && !TAccessor.Equals(_storage!, other._storage!))
         {
             return false;
         }
@@ -130,7 +213,7 @@ internal sealed class SetTrieNode<T>
                 return false;
             }
 
-            if (!child.SetEquals(otherChild))
+            if (!child.SetTrieEquals(otherChild))
             {
                 return false;
             }
@@ -139,11 +222,10 @@ internal sealed class SetTrieNode<T>
         return true;
     }
 
-    // Used to implement the interface method of the same name
-    // of the owning object.
-    internal bool Overlaps(SetTrieNode<T> other)
+    // Used to implement the ISet<T> method of the same name.
+    internal bool Overlaps(SetTrieNode<TKey, TValue, TStore, TAccessor> other)
     {
-        if (Last && other.Last)
+        if (_hasValue && other._hasValue)
         {
             return true;
         }
@@ -169,13 +251,14 @@ internal sealed class SetTrieNode<T>
         return false;
     }
 
-    // Used to implement the interface method of the same name
-    // of the owning object.
-    internal bool IsSubsetOf(SetTrieNode<T> other)
+    // Used to implement the ISet<T> method of the same name.
+    internal bool IsSubsetOf(
+        SetTrieNode<TKey, TValue, TStore, TAccessor> other
+    )
     {
         if (
-            (Last && !other.Last)
-            || Count > other.Count
+            (_hasValue && !other._hasValue)
+            || _count > other._count
             || _children.Count > other._children.Count
         )
         {
@@ -198,13 +281,14 @@ internal sealed class SetTrieNode<T>
         return true;
     }
 
-    // Used to implement the interface method of the same name
-    // of the owning object.
-    internal bool IsSupersetOf(SetTrieNode<T> other)
+    // Used to implement the ISet<T> method of the same name.
+    internal bool IsSupersetOf(
+        SetTrieNode<TKey, TValue, TStore, TAccessor> other
+    )
     {
         if (
-            (!Last && other.Last)
-            || Count < other.Count
+            (!_hasValue && other._hasValue)
+            || _count < other._count
             || _children.Count < other._children.Count
         )
         {
@@ -228,31 +312,36 @@ internal sealed class SetTrieNode<T>
     }
 
     /// <summary>
-    /// Gets the sets contained by this SetTrieNode and its children
+    /// Gets the key-value pairs stored in this SetTrieNode and its children
     /// in depth-first order.
     /// </summary>
     /// <param name="resultElements">The element values of the chain
     /// of SetTrieNodes from the root of the set trie
-    /// to this SetTrieNode.</param>
-    /// <returns>An enumerable with an enumerator that yields the sets
-    /// contained by this SetTrieNode and its children
+    /// to this SetTrieNode, representing the current set key.</param>
+    /// <returns>An enumerable with an enumerator that yields the
+    /// key-value pairs stored in this SetTrieNode and its children
     /// in depth-first order.</returns>
-    internal IEnumerable<HashSet<T>> EnumerateDepthFirst(
-        Stack<T> resultElements
-    )
+    internal IEnumerable<
+        KeyValuePair<HashSet<TKey>, TValue>
+    > EnumerateDepthFirst(Stack<TKey> resultElements)
     {
-        if (Last)
+        if (_hasValue)
         {
-            yield return resultElements.ToHashSet();
+            var set = resultElements.ToHashSet();
+
+            foreach (var value in TAccessor.Enumerate(_storage!))
+            {
+                yield return new(set, value);
+            }
         }
 
         foreach (var (element, child) in _children)
         {
             resultElements.Push(element);
 
-            foreach (var set in child.EnumerateDepthFirst(resultElements))
+            foreach (var entry in child.EnumerateDepthFirst(resultElements))
             {
-                yield return set;
+                yield return entry;
             }
 
             resultElements.Pop();
@@ -260,25 +349,57 @@ internal sealed class SetTrieNode<T>
     }
 
     /// <summary>
-    /// Gets the sets contained by this SetTrieNode and its children
+    /// Gets the values stored in this SetTrieNode and its children
+    /// in depth-first order.
+    /// </summary>
+    /// <returns>An enumerable with an enumerator that yields the
+    /// values stored in this SetTrieNode and its children
+    /// in depth-first order.</returns>
+    internal IEnumerable<TValue> EnumerateValuesDepthFirst()
+    {
+        if (_hasValue)
+        {
+            foreach (var value in TAccessor.Enumerate(_storage!))
+            {
+                yield return value;
+            }
+        }
+
+        foreach (var (_, child) in _children)
+        {
+            foreach (var value in child.EnumerateValuesDepthFirst())
+            {
+                yield return value;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets the key-value pairs stored in this SetTrieNode and its children
     /// in breadth-first order.
     /// </summary>
-    /// <returns>An enumerable with an enumerator that yields the sets
-    /// contained by this SetTrieNode and its children
+    /// <returns>An enumerable with an enumerator that yields the
+    /// key-value pairs stored in this SetTrieNode and its children
     /// in breadth-first order.</returns>
-    internal IEnumerable<HashSet<T>> EnumerateBreadthFirst()
+    internal IEnumerable<
+        KeyValuePair<HashSet<TKey>, TValue>
+    > EnumerateBreadthFirst()
     {
-        var nodes = new Queue<(SetTrieNode<T>, BacktrackingNode<T>)>();
+        var nodes =
+            new Queue<(
+                SetTrieNode<TKey, TValue, TStore, TAccessor>,
+                BacktrackingNode<TKey>
+            )>();
         nodes.Enqueue((this, new()));
 
         while (nodes.Count > 0)
         {
             var (node, backtrackingNode) = nodes.Dequeue();
 
-            if (node.Last)
+            if (node._hasValue)
             {
                 var btNode = backtrackingNode;
-                var set = new HashSet<T>();
+                var set = new HashSet<TKey>();
 
                 while (btNode.Parent is not null)
                 {
@@ -286,7 +407,10 @@ internal sealed class SetTrieNode<T>
                     btNode = btNode.Parent;
                 }
 
-                yield return set;
+                foreach (var value in TAccessor.Enumerate(_storage!))
+                {
+                    yield return new(set, value);
+                }
             }
 
             foreach (var (element, child) in node._children)
@@ -297,28 +421,121 @@ internal sealed class SetTrieNode<T>
     }
 
     /// <summary>
-    /// Removes all sets from this SetTrieNode.
+    /// Gets the values stored in this SetTrieNode and its children
+    /// in breadth-first order.
     /// </summary>
-    public void Clear()
+    /// <returns>An enumerable with an enumerator that yields the
+    /// values stored in this SetTrieNode and its children
+    /// in breadth-first order.</returns>
+    internal IEnumerable<TValue> EnumerateValuesBreadthFirst()
     {
-        _children.Clear();
-        Count = 0;
+        var nodes = new Queue<SetTrieNode<TKey, TValue, TStore, TAccessor>>();
+        nodes.Enqueue(this);
+
+        while (nodes.Count > 0)
+        {
+            var node = nodes.Dequeue();
+
+            if (node._hasValue)
+            {
+                foreach (var value in TAccessor.Enumerate(_storage!))
+                {
+                    yield return value;
+                }
+            }
+
+            foreach (var (_, child) in node._children)
+            {
+                nodes.Enqueue(child);
+            }
+        }
     }
 
     /// <summary>
-    /// Adds a set to the set trie.
+    /// Removes all values stored in this SetTrieNode
+    /// and removes all children.
     /// </summary>
-    /// <param name="elements">The elements of the set in sorted order.</param>
-    /// <param name="index">The index of the current element.</param>
-    internal void Add(ReadOnlySpan<T> elements, int index)
+    public void Clear()
+    {
+        _hasValue = false;
+        _count = 0;
+        _storage = default;
+        _children.Clear();
+    }
+
+    /// <summary>
+    /// Removes all values stored in this SetTrieNode.
+    /// </summary>
+    private void RemoveValues()
+    {
+        if (!_hasValue)
+        {
+            return;
+        }
+
+        _count -= TAccessor.Count(_storage!);
+        _hasValue = false;
+        _storage = default;
+    }
+
+    /// <summary>
+    /// Removes all children.
+    /// </summary>
+    private void RemoveChildren()
+    {
+        _count = _hasValue ? TAccessor.Count(_storage!) : 0;
+        _children.Clear();
+    }
+
+    /// <summary>
+    /// Adds a value to this SetTrieNode or a child if not already present.
+    /// </summary>
+    /// <param name="elements">The elements of the set key in sorted order.</param>
+    /// <param name="index">The index of the current element in the set key.</param>
+    /// <param name="value">The value to add.</param>
+    internal void Add(ReadOnlySpan<TKey> elements, int index, TValue value)
     {
         if (index == elements.Length)
         {
-            if (!Last)
+            TAccessor.Add(value, ref _storage, ref _hasValue, ref _count);
+            return;
+        }
+
+        var element = elements[index];
+
+        if (!_children.TryGetValue(element, out var child))
+        {
+            child = new();
+            _children.Add(element, child);
+        }
+
+        var oldCount = child._count;
+        child.Add(elements, index + 1, value);
+        _count += child._count - oldCount;
+    }
+
+    /// <summary>
+    /// Inserts a value storage into this set trie, replacing the existing
+    /// value storage of a SetTrieNode if necessary.
+    /// </summary>
+    /// <param name="elements">The elements of the set key in sorted order.</param>
+    /// <param name="index">The index of the current element in the set key.</param>
+    /// <param name="storage">The value storage to insert.</param>
+    internal void Set(ReadOnlySpan<TKey> elements, int index, TStore storage)
+    {
+        if (index == elements.Length)
+        {
+            if (_hasValue)
             {
-                Last = true;
-                ++Count;
+                RemoveValues();
             }
+
+            TAccessor.AddFrom(
+                storage,
+                ref _storage,
+                ref _hasValue,
+                ref _count
+            );
 
             return;
         }
@@ -331,24 +548,29 @@ internal sealed class SetTrieNode<T>
             _children.Add(element, child);
         }
 
-        var oldCount = child.Count;
-        child.Add(elements, index + 1);
-        Count += child.Count - oldCount;
+        var oldCount = child._count;
+        child.Set(elements, index + 1, storage);
+        _count += child._count - oldCount;
     }
 
     /// <summary>
-    /// Removes a set from the set trie.
+    /// Removes a value from this SetTrieNode or a child.
     /// </summary>
-    /// <param name="elements">The elements of the set in sorted order.</param>
-    /// <param name="index">The index of the current element.</param>
-    internal void Remove(ReadOnlySpan<T> elements, int index)
+    /// <param name="elements">The elements of the set key in sorted order.</param>
+    /// <param name="index">The index of the current element in the set key.</param>
+    /// <param name="value">The value to remove.</param>
+    internal void Remove(ReadOnlySpan<TKey> elements, int index, TValue value)
     {
         if (index == elements.Length)
         {
-            if (Last)
+            if (_hasValue)
             {
-                Last = false;
-                --Count;
+                TAccessor.Remove(
+                    value,
+                    ref _storage,
+                    ref _hasValue,
+                    ref _count
+                );
             }
 
             return;
@@ -361,24 +583,61 @@ internal sealed class SetTrieNode<T>
             return;
         }
 
-        var oldCount = child.Count;
-        child.Remove(elements, index + 1);
-        Count -= oldCount - child.Count;
+        var oldCount = child._count;
+        child.Remove(elements, index + 1, value);
+        _count -= oldCount - child._count;
 
-        if (child.Count == 0)
+        if (child._count == 0)
         {
             _children.Remove(element);
         }
     }
 
-    // Used to implement the interface method of the same name
-    // of the owning object.
-    internal void UnionWith(SetTrieNode<T> other)
+    /// <summary>
+    /// Removes all existing values associated with a set key
+    /// from this SetTrieNode or a child.
+    /// </summary>
+    /// <param name="elements">The elements of the set key in sorted order.</param>
+    /// <param name="index">The index of the current element in the set key.</param>
+    internal void Remove(ReadOnlySpan<TKey> elements, int index)
     {
-        if (!Last && other.Last)
+        if (index == elements.Length)
         {
-            Last = true;
-            ++Count;
+            RemoveValues();
+            return;
+        }
+
+        var element = elements[index];
+
+        if (!_children.TryGetValue(element, out var child))
+        {
+            return;
+        }
+
+        var oldCount = child._count;
+        child.Remove(elements, index + 1);
+        _count -= oldCount - child._count;
+
+        if (child._count == 0)
+        {
+            _children.Remove(element);
+        }
+    }
+
+    /// <summary>
+    /// Adds all key-value pairs from another SetTrieNode and its children.
+    /// </summary>
+    /// <param name="other">The other SetTrieNode.</param>
+    internal void AddFrom(SetTrieNode<TKey, TValue, TStore, TAccessor> other)
+    {
+        if (other._hasValue)
+        {
+            TAccessor.AddFrom(
+                other._storage!,
+                ref _storage,
+                ref _hasValue,
+                ref _count
+            );
         }
 
         foreach (var (element, otherChild) in other._children)
@@ -389,34 +648,34 @@ internal sealed class SetTrieNode<T>
                 _children.Add(element, child);
             }
 
-            var oldCount = child.Count;
-            child.UnionWith(otherChild);
-            Count += child.Count - oldCount;
+            var oldCount = child._count;
+            child.AddFrom(otherChild);
+            _count += child._count - oldCount;
         }
     }
 
-    // Used to implement the interface method of the same name
-    // of the owning object.
-    internal void IntersectWith(SetTrieNode<T> other)
+    // Used to implement the ISet<T> method of the same name.
+    // Note: the value storages of surviving nodes are unaffected.
+    internal void IntersectWith(
+        SetTrieNode<TKey, TValue, TStore, TAccessor> other
+    )
     {
-        if (Last && !other.Last)
+        if (_hasValue && !other._hasValue)
         {
-            Last = false;
-            --Count;
+            RemoveValues();
         }
 
         if (other._children.Count == 0)
         {
-            _children.Clear();
-            Count = Last ? 1 : 0;
+            RemoveChildren();
             return;
         }
 
-        var elementsToRemove = new List<T>();
+        var elementsToRemove = new List<TKey>();
 
         foreach (var (element, child) in _children)
         {
-            var oldCount = child.Count;
+            var oldCount = child._count;
 
             if (other._children.TryGetValue(element, out var otherChild))
             {
@@ -424,12 +683,12 @@ internal sealed class SetTrieNode<T>
             }
             else
             {
-                child.Count = 0;
+                child._count = 0;
             }
 
-            Count -= oldCount - child.Count;
+            _count -= oldCount - child._count;
 
-            if (child.Count == 0)
+            if (child._count == 0)
             {
                 elementsToRemove.Add(element);
             }
@@ -441,14 +700,14 @@ internal sealed class SetTrieNode<T>
         }
     }
 
-    // Used to implement the interface method of the same name
-    // of the owning object.
-    internal void ExceptWith(SetTrieNode<T> other)
+    // Used to implement the ISet<T> method of the same name.
+    internal void ExceptWith(
+        SetTrieNode<TKey, TValue, TStore, TAccessor> other
+    )
     {
-        if (Last && other.Last)
+        if (_hasValue && other._hasValue)
         {
-            Last = false;
-            --Count;
+            RemoveValues();
         }
 
         foreach (var (element, otherChild) in other._children)
@@ -458,40 +717,40 @@ internal sealed class SetTrieNode<T>
                 continue;
             }
 
-            var oldCount = child.Count;
+            var oldCount = child._count;
             child.ExceptWith(otherChild);
-            Count -= oldCount - child.Count;
+            _count -= oldCount - child._count;
 
-            if (child.Count == 0)
+            if (child._count == 0)
             {
                 _children.Remove(element);
             }
         }
     }
 
-    // Used to implement the interface method of the same name
-    // of the owning object.
-    internal bool SymmetricExceptWith(SetTrieNode<T> other)
+    // Used to implement the ISet<T> method of the same name.
+    // Note: key-value pairs from the other node are added when appropriate.
+    internal bool SymmetricExceptWith(
+        SetTrieNode<TKey, TValue, TStore, TAccessor> other
+    )
     {
-        if (Count == 0)
+        if (_count == 0)
         {
-            UnionWith(other);
-            return Count != 0;
+            AddFrom(other);
+            return _count != 0;
         }
 
         var changed = false;
 
-        if (other.Last)
+        if (other._hasValue)
         {
-            if (Last)
+            if (_hasValue)
             {
-                Last = false;
-                --Count;
+                RemoveValues();
             }
             else
             {
-                Last = true;
-                ++Count;
+                AddFrom(other);
             }
 
             changed = true;
@@ -502,7 +761,7 @@ internal sealed class SetTrieNode<T>
             return changed;
         }
 
-        var elementsToRemove = new List<T>();
+        var elementsToRemove = new List<TKey>();
 
         foreach (var (element, otherChild) in other._children)
         {
@@ -512,11 +771,11 @@ internal sealed class SetTrieNode<T>
                 _children.Add(element, child);
             }
 
-            var oldCount = child.Count;
+            var oldCount = child._count;
             changed = child.SymmetricExceptWith(otherChild) || changed;
-            Count += child.Count - oldCount;
+            _count += child._count - oldCount;
 
-            if (child.Count == 0)
+            if (child._count == 0)
             {
                 elementsToRemove.Add(element);
             }
@@ -531,15 +790,15 @@ internal sealed class SetTrieNode<T>
     }
 
     /// <summary>
-    /// Checks whether a subset of a given set exists.
+    /// Checks whether a subset key of a given set key exists.
     /// </summary>
-    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="elements">The elements of the set key in sorted order.</param>
     /// <param name="index">The index of the current element.</param>
-    /// <returns>Whether a subset of the given set is contained by
+    /// <returns>Whether a subset key of the given set key is stored in
     /// this SetTrieNode or its children.</returns>
-    internal bool ContainsSubsetOf(ReadOnlySpan<T> elements, int index)
+    internal bool ContainsSubsetOf(ReadOnlySpan<TKey> elements, int index)
     {
-        if (Last)
+        if (_hasValue)
         {
             return true;
         }
@@ -568,19 +827,20 @@ internal sealed class SetTrieNode<T>
     }
 
     /// <summary>
-    /// Counts the number of existing subsets of a given set.
+    /// Counts the number of existing values associated with subset keys
+    /// of a given set key.
     /// </summary>
-    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="elements">The elements of the set key in sorted order.</param>
     /// <param name="index">The index of the current element.</param>
-    /// <returns>The number of subsets of the given set contained by
-    /// this SetTrieNode and its children.</returns>
-    internal int CountSubsetsOf(ReadOnlySpan<T> elements, int index)
+    /// <returns>The number of values associated with subset keys of
+    /// the given set key stored in this SetTrieNode and its children.</returns>
+    internal int CountSubsetValuesOf(ReadOnlySpan<TKey> elements, int index)
     {
         var count = 0;
 
-        if (Last)
+        if (_hasValue)
         {
-            ++count;
+            count += TAccessor.Count(_storage!);
         }
 
         if (index == elements.Length)
@@ -597,23 +857,23 @@ internal sealed class SetTrieNode<T>
                 continue;
             }
 
-            count += child.CountSubsetsOf(elements, i + 1);
+            count += child.CountSubsetValuesOf(elements, i + 1);
         }
 
         return count;
     }
 
     /// <summary>
-    /// Removes all existing subsets of a given set.
+    /// Removes all existing values associated with subset keys
+    /// of a given set key.
     /// </summary>
-    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="elements">The elements of the set key in sorted order.</param>
     /// <param name="index">The index of the current element.</param>
-    internal void RemoveSubsetsOf(ReadOnlySpan<T> elements, int index)
+    internal void RemoveSubsetsOf(ReadOnlySpan<TKey> elements, int index)
     {
-        if (Last)
+        if (_hasValue)
         {
-            Last = false;
-            --Count;
+            RemoveValues();
         }
 
         if (index == elements.Length)
@@ -630,11 +890,11 @@ internal sealed class SetTrieNode<T>
                 continue;
             }
 
-            var oldCount = child.Count;
+            var oldCount = child._count;
             child.RemoveSubsetsOf(elements, i + 1);
-            Count -= oldCount - child.Count;
+            _count -= oldCount - child._count;
 
-            if (child.Count == 0)
+            if (child._count == 0)
             {
                 _children.Remove(element);
             }
@@ -642,25 +902,34 @@ internal sealed class SetTrieNode<T>
     }
 
     /// <summary>
-    /// Gets the subsets of a given set in depth-first order.
+    /// Gets the key-value pairs associated with subset keys
+    /// of a given set key in depth-first order.
     /// </summary>
     /// <param name="resultElements">The element values of the chain
     /// of SetTrieNodes from the root of the set trie
-    /// to this SetTrieNode.</param>
-    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// to this SetTrieNode, representing the current set key.</param>
+    /// <param name="elements">The elements of the set key in sorted order.</param>
     /// <param name="index">The index of the current element.</param>
     /// <returns>An enumerable with an enumerator that yields the
-    /// subsets of the given set contained by this SetTrieNode
+    /// key-value pairs associated with subset keys
+    /// of the given set key stored in this SetTrieNode
     /// and its children in depth-first order.</returns>
-    internal IEnumerable<HashSet<T>> EnumerateSubsetsDepthFirst(
-        Stack<T> resultElements,
-        T[] elements,
+    internal IEnumerable<
+        KeyValuePair<HashSet<TKey>, TValue>
+    > EnumerateSubsetsDepthFirst(
+        Stack<TKey> resultElements,
+        TKey[] elements,
         int index
     )
     {
-        if (Last)
+        if (_hasValue)
         {
-            yield return resultElements.ToHashSet();
+            var set = resultElements.ToHashSet();
+
+            foreach (var value in TAccessor.Enumerate(_storage!))
+            {
+                yield return new(set, value);
+            }
         }
 
         if (index == elements.Length)
@@ -680,14 +949,14 @@ internal sealed class SetTrieNode<T>
             resultElements.Push(element);
 
             foreach (
-                var set in child.EnumerateSubsetsDepthFirst(
+                var entry in child.EnumerateSubsetsDepthFirst(
                     resultElements,
                     elements,
                     i + 1
                 )
             )
             {
-                yield return set;
+                yield return entry;
             }
 
             resultElements.Pop();
@@ -695,18 +964,71 @@ internal sealed class SetTrieNode<T>
     }
 
     /// <summary>
-    /// Gets the subsets of a given set in breadth-first order.
+    /// Gets the values associated with subset keys
+    /// of a given set key in depth-first order.
     /// </summary>
-    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="elements">The elements of the set key in sorted order.</param>
+    /// <param name="index">The index of the current element.</param>
     /// <returns>An enumerable with an enumerator that yields the
-    /// subsets of the given set contained by this SetTrieNode
+    /// values associated with subset keys
+    /// of the given set key stored in this SetTrieNode
+    /// and its children in depth-first order.</returns>
+    internal IEnumerable<TValue> EnumerateSubsetValuesDepthFirst(
+        TKey[] elements,
+        int index
+    )
+    {
+        if (_hasValue)
+        {
+            foreach (var value in TAccessor.Enumerate(_storage!))
+            {
+                yield return value;
+            }
+        }
+
+        if (index == elements.Length)
+        {
+            yield break;
+        }
+
+        for (var i = index; i < elements.Length; ++i)
+        {
+            var element = elements[i];
+
+            if (!_children.TryGetValue(element, out var child))
+            {
+                continue;
+            }
+
+            foreach (
+                var value in child.EnumerateSubsetValuesDepthFirst(
+                    elements,
+                    i + 1
+                )
+            )
+            {
+                yield return value;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets the key-value pairs associated with subset keys
+    /// of a given set key in breadth-first order.
+    /// </summary>
+    /// <param name="elements">The elements of the set key in sorted order.</param>
+    /// <returns>An enumerable with an enumerator that yields the
+    /// key-value pairs associated with subset keys
+    /// of the given set key stored in this SetTrieNode
     /// and its children in breadth-first order.</returns>
-    internal IEnumerable<HashSet<T>> EnumerateSubsetsBreadthFirst(T[] elements)
+    internal IEnumerable<
+        KeyValuePair<HashSet<TKey>, TValue>
+    > EnumerateSubsetsBreadthFirst(TKey[] elements)
     {
         var nodes =
             new Queue<(
-                SetTrieNode<T>,
-                BacktrackingNode<(T? element, int index)>
+                SetTrieNode<TKey, TValue, TStore, TAccessor>,
+                BacktrackingNode<(TKey? element, int index)>
             )>();
         nodes.Enqueue((this, new(null, (default, 0))));
 
@@ -714,10 +1036,10 @@ internal sealed class SetTrieNode<T>
         {
             var (node, backtrackingNode) = nodes.Dequeue();
 
-            if (node.Last)
+            if (node._hasValue)
             {
                 var btNode = backtrackingNode;
-                var set = new HashSet<T>();
+                var set = new HashSet<TKey>();
 
                 while (btNode.Parent is not null)
                 {
@@ -725,7 +1047,10 @@ internal sealed class SetTrieNode<T>
                     btNode = btNode.Parent;
                 }
 
-                yield return set;
+                foreach (var value in TAccessor.Enumerate(_storage!))
+                {
+                    yield return new(set, value);
+                }
             }
 
             var (_, index) = backtrackingNode.Value;
@@ -745,24 +1070,72 @@ internal sealed class SetTrieNode<T>
                 }
 
                 nodes.Enqueue(
-                    (child, new(backtrackingNode, (element, index)))
+                    (child, new(backtrackingNode, (element, i + 1)))
                 );
             }
         }
     }
 
     /// <summary>
-    /// Checks whether a superset of a given set exists.
+    /// Gets the values associated with subset keys
+    /// of a given set key in breadth-first order.
     /// </summary>
-    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="elements">The elements of the set key in sorted order.</param>
+    /// <returns>An enumerable with an enumerator that yields the
+    /// values associated with subset keys
+    /// of the given set key stored in this SetTrieNode
+    /// and its children in breadth-first order.</returns>
+    internal IEnumerable<TValue> EnumerateSubsetValuesBreadthFirst(
+        TKey[] elements
+    )
+    {
+        var nodes =
+            new Queue<(SetTrieNode<TKey, TValue, TStore, TAccessor>, int)>();
+        nodes.Enqueue((this, 0));
+
+        while (nodes.Count > 0)
+        {
+            var (node, index) = nodes.Dequeue();
+
+            if (node._hasValue)
+            {
+                foreach (var value in TAccessor.Enumerate(_storage!))
+                {
+                    yield return value;
+                }
+            }
+
+            if (index == elements.Length)
+            {
+                continue;
+            }
+
+            for (var i = index; i < elements.Length; ++i)
+            {
+                var element = elements[i];
+
+                if (!node._children.TryGetValue(element, out var child))
+                {
+                    continue;
+                }
+
+                nodes.Enqueue((child, i + 1));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Checks whether a subset key of a given set key exists.
+    /// </summary>
+    /// <param name="elements">The elements of the set key in sorted order.</param>
     /// <param name="index">The index of the current element.</param>
-    /// <returns>Whether a superset of the given set is contained by
+    /// <returns>Whether a subset key of the given set key is stored in
     /// this SetTrieNode or its children.</returns>
-    internal bool ContainsSupersetOf(ReadOnlySpan<T> elements, int index)
+    internal bool ContainsSupersetOf(ReadOnlySpan<TKey> elements, int index)
     {
         if (index == elements.Length)
         {
-            return Count > 0;
+            return _count > 0;
         }
 
         var nextElement = elements[index];
@@ -788,17 +1161,18 @@ internal sealed class SetTrieNode<T>
     }
 
     /// <summary>
-    /// Counts the number of existing supersets of a given set.
+    /// Counts the number of existing values associated with superset keys
+    /// of a given set key.
     /// </summary>
-    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="elements">The elements of the set key in sorted order.</param>
     /// <param name="index">The index of the current element.</param>
-    /// <returns>The number of supersets of the given set contained by
-    /// this SetTrieNode and its children.</returns>
-    internal int CountSupersetsOf(ReadOnlySpan<T> elements, int index)
+    /// <returns>The number of values associated with superset keys of
+    /// the given set key stored in this SetTrieNode and its children.</returns>
+    internal int CountSupersetValuesOf(ReadOnlySpan<TKey> elements, int index)
     {
         if (index == elements.Length)
         {
-            return Count;
+            return _count;
         }
 
         var count = 0;
@@ -814,18 +1188,19 @@ internal sealed class SetTrieNode<T>
             }
 
             var nextIndex = order == 0 ? index + 1 : index;
-            count += child.CountSupersetsOf(elements, nextIndex);
+            count += child.CountSupersetValuesOf(elements, nextIndex);
         }
 
         return count;
     }
 
     /// <summary>
-    /// Removes all existing supersets of a given set.
+    /// Removes all existing values associated with superset keys
+    /// of a given set key.
     /// </summary>
-    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="elements">The elements of the set key in sorted order.</param>
     /// <param name="index">The index of the current element.</param>
-    internal void RemoveSupersetsOf(ReadOnlySpan<T> elements, int index)
+    internal void RemoveSupersetsOf(ReadOnlySpan<TKey> elements, int index)
     {
         if (index == elements.Length)
         {
@@ -834,7 +1209,7 @@ internal sealed class SetTrieNode<T>
         }
 
         var nextElement = elements[index];
-        var elementsToRemove = new List<T>();
+        var elementsToRemove = new List<TKey>();
 
         foreach (var (element, child) in _children)
         {
@@ -846,11 +1221,11 @@ internal sealed class SetTrieNode<T>
             }
 
             var nextIndex = order == 0 ? index + 1 : index;
-            var oldCount = child.Count;
+            var oldCount = child._count;
             child.RemoveSupersetsOf(elements, nextIndex);
-            Count -= oldCount - child.Count;
+            _count -= oldCount - child._count;
 
-            if (child.Count == 0)
+            if (child._count == 0)
             {
                 elementsToRemove.Add(element);
             }
@@ -863,27 +1238,31 @@ internal sealed class SetTrieNode<T>
     }
 
     /// <summary>
-    /// Gets the supersets of a given set in depth-first order.
+    /// Gets the key-value pairs associated with superset keys
+    /// of a given set key in depth-first order.
     /// </summary>
     /// <param name="resultElements">The element values of the chain
     /// of SetTrieNodes from the root of the set trie
-    /// to this SetTrieNode.</param>
-    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// to this SetTrieNode, representing the current set key.</param>
+    /// <param name="elements">The elements of the set key in sorted order.</param>
     /// <param name="index">The index of the current element.</param>
     /// <returns>An enumerable with an enumerator that yields the
-    /// supersets of the given set contained by this SetTrieNode
+    /// key-value pairs associated with superset keys
+    /// of the given set key stored in this SetTrieNode
     /// and its children in depth-first order.</returns>
-    internal IEnumerable<HashSet<T>> EnumerateSupersetsDepthFirst(
-        Stack<T> resultElements,
-        T[] elements,
+    internal IEnumerable<
+        KeyValuePair<HashSet<TKey>, TValue>
+    > EnumerateSupersetsDepthFirst(
+        Stack<TKey> resultElements,
+        TKey[] elements,
         int index
     )
     {
         if (index == elements.Length)
         {
-            foreach (var set in EnumerateDepthFirst(resultElements))
+            foreach (var entry in EnumerateDepthFirst(resultElements))
             {
-                yield return set;
+                yield return entry;
             }
 
             yield break;
@@ -904,14 +1283,14 @@ internal sealed class SetTrieNode<T>
             resultElements.Push(element);
 
             foreach (
-                var set in child.EnumerateSupersetsDepthFirst(
+                var entry in child.EnumerateSupersetsDepthFirst(
                     resultElements,
                     elements,
                     nextIndex
                 )
             )
             {
-                yield return set;
+                yield return entry;
             }
 
             resultElements.Pop();
@@ -919,20 +1298,72 @@ internal sealed class SetTrieNode<T>
     }
 
     /// <summary>
-    /// Gets the supersets of a given set in breadth-first order.
+    /// Gets the values associated with superset keys
+    /// of a given set key in depth-first order.
     /// </summary>
-    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="elements">The elements of the set key in sorted order.</param>
+    /// <param name="index">The index of the current element.</param>
     /// <returns>An enumerable with an enumerator that yields the
-    /// supersets of the given set contained by this SetTrieNode
-    /// and its children in breadth-first order.</returns>
-    internal IEnumerable<HashSet<T>> EnumerateSupersetsBreadthFirst(
-        T[] elements
+    /// values associated with superset keys
+    /// of the given set key stored in this SetTrieNode
+    /// and its children in depth-first order.</returns>
+    internal IEnumerable<TValue> EnumerateSupersetValuesDepthFirst(
+        TKey[] elements,
+        int index
     )
+    {
+        if (index == elements.Length)
+        {
+            foreach (var value in EnumerateValuesDepthFirst())
+            {
+                yield return value;
+            }
+
+            yield break;
+        }
+
+        var nextElement = elements[index];
+
+        foreach (var (element, child) in _children)
+        {
+            var order = element.CompareTo(nextElement);
+
+            if (order > 0)
+            {
+                break;
+            }
+
+            var nextIndex = order == 0 ? index + 1 : index;
+
+            foreach (
+                var value in child.EnumerateSupersetValuesDepthFirst(
+                    elements,
+                    nextIndex
+                )
+            )
+            {
+                yield return value;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets the key-value pairs associated with superset keys
+    /// of a given set key in breadth-first order.
+    /// </summary>
+    /// <param name="elements">The elements of the set key in sorted order.</param>
+    /// <returns>An enumerable with an enumerator that yields the
+    /// key-value pairs associated with superset keys
+    /// of the given set key stored in this SetTrieNode
+    /// and its children in breadth-first order.</returns>
+    internal IEnumerable<
+        KeyValuePair<HashSet<TKey>, TValue>
+    > EnumerateSupersetsBreadthFirst(TKey[] elements)
     {
         var nodes =
             new Queue<(
-                SetTrieNode<T>,
-                BacktrackingNode<(T? element, int index)>
+                SetTrieNode<TKey, TValue, TStore, TAccessor>,
+                BacktrackingNode<(TKey? element, int index)>
             )>();
         nodes.Enqueue((this, new(null, (default, 0))));
 
@@ -943,10 +1374,10 @@ internal sealed class SetTrieNode<T>
 
             if (index == elements.Length)
             {
-                if (node.Last)
+                if (node._hasValue)
                 {
                     var btNode = backtrackingNode;
-                    var set = new HashSet<T>();
+                    var set = new HashSet<TKey>();
 
                     while (btNode.Parent is not null)
                     {
@@ -954,7 +1385,10 @@ internal sealed class SetTrieNode<T>
                         btNode = btNode.Parent;
                     }
 
-                    yield return set;
+                    foreach (var value in TAccessor.Enumerate(_storage!))
+                    {
+                        yield return new(set, value);
+                    }
                 }
 
                 foreach (var (element, child) in node._children)
@@ -987,21 +1421,76 @@ internal sealed class SetTrieNode<T>
     }
 
     /// <summary>
-    /// Checks whether a proper subset of a given set exists.
+    /// Gets the values associated with superset keys
+    /// of a given set key in breadth-first order.
     /// </summary>
-    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="elements">The elements of the set key in sorted order.</param>
+    /// <returns>An enumerable with an enumerator that yields the
+    /// values associated with superset keys
+    /// of the given set key stored in this SetTrieNode
+    /// and its children in breadth-first order.</returns>
+    internal IEnumerable<TValue> EnumerateSupersetValuesBreadthFirst(
+        TKey[] elements
+    )
+    {
+        var nodes =
+            new Queue<(SetTrieNode<TKey, TValue, TStore, TAccessor>, int)>();
+        nodes.Enqueue((this, 0));
+
+        while (nodes.Count > 0)
+        {
+            var (node, index) = nodes.Dequeue();
+
+            if (index == elements.Length)
+            {
+                if (node._hasValue)
+                {
+                    foreach (var value in TAccessor.Enumerate(_storage!))
+                    {
+                        yield return value;
+                    }
+                }
+
+                foreach (var (_, child) in node._children)
+                {
+                    nodes.Enqueue((child, index));
+                }
+
+                continue;
+            }
+
+            var nextElement = elements[index];
+
+            foreach (var (element, child) in node._children)
+            {
+                var order = element.CompareTo(nextElement);
+
+                if (order > 0)
+                {
+                    break;
+                }
+
+                var nextIndex = order == 0 ? index + 1 : index;
+                nodes.Enqueue((child, nextIndex));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Checks whether a proper subset key of a given set key exists.
+    /// </summary>
+    /// <param name="elements">The elements of the set key in sorted order.</param>
     /// <param name="index">The index of the current element.</param>
-    /// <param name="depth">The depth of this SetTrieNode
-    /// in the set trie.</param>
-    /// <returns>Whether a proper subset of the given set is contained by
+    /// <param name="depth">The depth of this SetTrieNode in the set trie.</param>
+    /// <returns>Whether a proper subset key of the given set key is stored in
     /// this SetTrieNode or its children.</returns>
     internal bool ContainsProperSubsetOf(
-        ReadOnlySpan<T> elements,
+        ReadOnlySpan<TKey> elements,
         int index,
         int depth
     )
     {
-        if (Last && depth != elements.Length)
+        if (_hasValue && depth != elements.Length)
         {
             return true;
         }
@@ -1032,22 +1521,21 @@ internal sealed class SetTrieNode<T>
     }
 
     /// <summary>
-    /// Removes all existing proper subsets of a given set.
+    /// Removes all existing values associated with proper subset keys
+    /// of a given set key.
     /// </summary>
-    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="elements">The elements of the set key in sorted order.</param>
     /// <param name="index">The index of the current element.</param>
-    /// <param name="depth">The depth of this SetTrieNode
-    /// in the set trie.</param>
+    /// <param name="depth">The depth of this SetTrieNode in the set trie.</param>
     internal void RemoveProperSubsetsOf(
-        ReadOnlySpan<T> elements,
+        ReadOnlySpan<TKey> elements,
         int index,
         int depth
     )
     {
-        if (Last && depth != elements.Length)
+        if (_hasValue && depth != elements.Length)
         {
-            Last = false;
-            --Count;
+            RemoveValues();
         }
 
         if (index == elements.Length)
@@ -1066,11 +1554,11 @@ internal sealed class SetTrieNode<T>
                 continue;
             }
 
-            var oldCount = child.Count;
+            var oldCount = child._count;
             child.RemoveProperSubsetsOf(elements, i + 1, depth);
-            Count -= oldCount - child.Count;
+            _count -= oldCount - child._count;
 
-            if (child.Count == 0)
+            if (child._count == 0)
             {
                 _children.Remove(element);
             }
@@ -1078,23 +1566,22 @@ internal sealed class SetTrieNode<T>
     }
 
     /// <summary>
-    /// Checks whether a proper superset of a given set exists.
+    /// Checks whether a proper superset key of a given set key exists.
     /// </summary>
-    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="elements">The elements of the set key in sorted order.</param>
     /// <param name="index">The index of the current element.</param>
-    /// <param name="depth">The depth of this SetTrieNode
-    /// in the set trie.</param>
-    /// <returns>Whether a proper superset of the given set is contained by
+    /// <param name="depth">The depth of this SetTrieNode in the set trie.</param>
+    /// <returns>Whether a proper superset key of the given set key is stored in
     /// this SetTrieNode or its children.</returns>
     internal bool ContainsProperSupersetOf(
-        ReadOnlySpan<T> elements,
+        ReadOnlySpan<TKey> elements,
         int index,
         int depth
     )
     {
         if (index == elements.Length)
         {
-            return Count > (depth == elements.Length ? 1 : 0);
+            return (depth == elements.Length ? _children.Count : _count) > 0;
         }
 
         ++depth;
@@ -1121,27 +1608,27 @@ internal sealed class SetTrieNode<T>
     }
 
     /// <summary>
-    /// Removes all existing proper supersets of a given set.
+    /// Removes all existing values associated with proper superset keys
+    /// of a given set key.
     /// </summary>
-    /// <param name="elements">The elements of the set in sorted order.</param>
+    /// <param name="elements">The elements of the set key in sorted order.</param>
     /// <param name="index">The index of the current element.</param>
-    /// <param name="depth">The depth of this SetTrieNode
-    /// in the set trie.</param>
+    /// <param name="depth">The depth of this SetTrieNode in the set trie.</param>
     internal void RemoveProperSupersetsOf(
-        ReadOnlySpan<T> elements,
+        ReadOnlySpan<TKey> elements,
         int index,
         int depth
     )
     {
         if (index == elements.Length)
         {
-            var restoreLast = Last && depth == elements.Length;
-            Clear();
-
-            if (restoreLast)
+            if (depth == elements.Length)
             {
-                Last = true;
-                ++Count;
+                RemoveChildren();
+            }
+            else
+            {
+                Clear();
             }
 
             return;
@@ -1149,7 +1636,7 @@ internal sealed class SetTrieNode<T>
 
         ++depth;
         var nextElement = elements[index];
-        var elementsToRemove = new List<T>();
+        var elementsToRemove = new List<TKey>();
 
         foreach (var (element, child) in _children)
         {
@@ -1161,11 +1648,11 @@ internal sealed class SetTrieNode<T>
             }
 
             var nextIndex = order == 0 ? index + 1 : index;
-            var oldCount = child.Count;
+            var oldCount = child._count;
             child.RemoveProperSupersetsOf(elements, nextIndex, depth);
-            Count -= oldCount - child.Count;
+            _count -= oldCount - child._count;
 
-            if (child.Count == 0)
+            if (child._count == 0)
             {
                 elementsToRemove.Add(element);
             }
