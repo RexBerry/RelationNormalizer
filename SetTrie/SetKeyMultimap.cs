@@ -42,8 +42,7 @@ public class SetKeyMultimap<TKey, TValue>
     /// <summary>
     /// Gets all keys in this SetKeyMultimap.
     /// </summary>
-    public IEnumerable<IReadOnlySet<TKey>> Keys =>
-        GetEntriesDepthFirst().Select(entry => entry.Key);
+    public IEnumerable<IReadOnlySet<TKey>> Keys => GetKeysDepthFirst();
 
     /// <summary>
     /// Gets all values in this SetKeyMultimap.
@@ -116,6 +115,23 @@ public class SetKeyMultimap<TKey, TValue>
         KeyValuePair<IReadOnlySet<TKey>, TValue>
     > GetEntriesBreadthFirst() =>
         WrapEnumerable(_root.EnumerateBreadthFirst());
+
+    /// <summary>
+    /// Gets all keys in depth-first order.
+    /// </summary>
+    /// <returns>An enumerable with an enumerator that yields all
+    /// keys in depth-first (lexicographic) order.</returns>
+    public IEnumerable<IReadOnlySet<TKey>> GetKeysDepthFirst() =>
+        WrapEnumerable(_root.EnumerateKeysDepthFirst(new()));
+
+    /// <summary>
+    /// Gets all keys in breadth-first order.
+    /// </summary>
+    /// <returns>An enumerable with an enumerator that yields all
+    /// keys in breadth-first (sorted by size, then lexicographically)
+    /// order.</returns>
+    public IEnumerable<IReadOnlySet<TKey>> GetKeysBreadthFirst() =>
+        WrapEnumerable(_root.EnumerateKeysBreadthFirst());
 
     /// <summary>
     /// Gets all values in depth-first order.
@@ -1120,8 +1136,8 @@ public class SetKeyMultimap<TKey, TValue>
     /// Wraps an enumerable of the key-value pairs in this SetKeyMultimap.
     /// </summary>
     /// <param name="enumerable">The enumerable to wrap.</param>
-    /// <returns>An enumerable with an enumerator that yields the
-    /// key-value pairs in thie SetKeyMultimap and is automatically
+    /// <returns>An enumerable with an enumerator that yields
+    /// key-value pairs in this SetKeyMultimap and is automatically
     /// invalidated when modifications are made.</returns>
     /// <exception cref="InvalidOperationException">When the enumerator is
     /// invalidated due to modifications.</exception>
@@ -1147,10 +1163,38 @@ public class SetKeyMultimap<TKey, TValue>
     }
 
     /// <summary>
+    /// Wraps an enumerable of the set keys in this SetKeyMultimap.
+    /// </summary>
+    /// <param name="enumerable">The enumerable to wrap.</param>
+    /// <returns>An enumerable with an enumerator that yields
+    /// set keys in this SetKeyMultimap and is automatically
+    /// invalidated when modifications are made.</returns>
+    /// <exception cref="InvalidOperationException">When the enumerator is
+    /// invalidated due to modifications.</exception>
+    private IEnumerable<IReadOnlySet<TKey>> WrapEnumerable(
+        IEnumerable<HashSet<TKey>> enumerable
+    )
+    {
+        var beginVersion = _version;
+
+        foreach (var set in enumerable)
+        {
+            if (_version != beginVersion)
+            {
+                throw new InvalidOperationException(
+                    "Collection was modified after the enumerator was instantiated."
+                );
+            }
+
+            yield return set;
+        }
+    }
+
+    /// <summary>
     /// Wraps an enumerable of the values in this SetKeyMultimap.
     /// </summary>
     /// <param name="enumerable">The enumerable to wrap.</param>
-    /// <returns>An enumerable with an enumerator that yields the
+    /// <returns>An enumerable with an enumerator that yields
     /// values in this SetKeyMultimap and is automatically
     /// invalidated when modifications are made.</returns>
     /// <exception cref="InvalidOperationException">When the enumerator is

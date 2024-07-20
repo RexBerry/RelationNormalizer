@@ -65,7 +65,7 @@ public sealed class SetFamily<T>
     /// <returns>An enumerable with an enumerator that
     /// yields sets in depth-first (lexicographic) order.</returns>
     public IEnumerable<IReadOnlySet<T>> GetSetsDepthFirst() =>
-        WrapEnumerable(_root.EnumerateDepthFirst(new()));
+        WrapEnumerable(_root.EnumerateKeysDepthFirst(new()));
 
     /// <summary>
     /// Gets the sets in this SetFamily in breadth-first order.
@@ -74,7 +74,7 @@ public sealed class SetFamily<T>
     /// yields sets in breadth-first
     /// (sorted by size, then lexicographically) order.</returns>
     public IEnumerable<IReadOnlySet<T>> GetSetsBreadthFirst() =>
-        WrapEnumerable(_root.EnumerateBreadthFirst());
+        WrapEnumerable(_root.EnumerateKeysBreadthFirst());
 
     public void CopyTo(IReadOnlySet<T>[] array, int arrayIndex)
     {
@@ -1090,7 +1090,8 @@ public sealed class SetFamily<T>
     /// </summary>
     /// <param name="enumerable">The enumerable to wrap.</param>
     /// <returns>An enumerable with an enumerator that discards the
-    /// meaningless value in the key-value pair and is automatically
+    /// meaningless value in the key-value pair to yield sets
+    /// in this SetFamily and is automatically
     /// invalidated when modifications are made.</returns>
     /// <exception cref="InvalidOperationException">When the enumerator is
     /// invalidated due to modifications.</exception>
@@ -1101,6 +1102,34 @@ public sealed class SetFamily<T>
         var beginVersion = _version;
 
         foreach (var (set, _) in enumerable)
+        {
+            if (_version != beginVersion)
+            {
+                throw new InvalidOperationException(
+                    "Collection was modified after the enumerator was instantiated."
+                );
+            }
+
+            yield return set;
+        }
+    }
+
+    /// <summary>
+    /// Wraps an enumerable of this SetFamily.
+    /// </summary>
+    /// <param name="enumerable">The enumerable to wrap.</param>
+    /// <returns>An enumerable with an enumerator that
+    /// yields sets in this SetFamily and is automatically
+    /// invalidated when modifications are made.</returns>
+    /// <exception cref="InvalidOperationException">When the enumerator is
+    /// invalidated due to modifications.</exception>
+    private IEnumerable<IReadOnlySet<T>> WrapEnumerable(
+        IEnumerable<HashSet<T>> enumerable
+    )
+    {
+        var beginVersion = _version;
+
+        foreach (var set in enumerable)
         {
             if (_version != beginVersion)
             {

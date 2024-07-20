@@ -417,6 +417,38 @@ internal sealed class SetTrieNode<TKey, TValue, TStore, TAccessor>
     }
 
     /// <summary>
+    /// Gets the keys stored in this SetTrieNode and its children
+    /// in depth-first order.
+    /// </summary>
+    /// <param name="resultElements">The element values of the chain
+    /// of SetTrieNodes from the root of the set trie
+    /// to this SetTrieNode, representing the current set key.</param>
+    /// <returns>An enumerable with an enumerator that yields the
+    /// keys stored in this SetTrieNode and its children
+    /// in depth-first order.</returns>
+    internal IEnumerable<HashSet<TKey>> EnumerateKeysDepthFirst(
+        Stack<TKey> resultElements
+    )
+    {
+        if (_hasValue)
+        {
+            yield return resultElements.ToHashSet();
+        }
+
+        foreach (var (element, child) in _children)
+        {
+            resultElements.Push(element);
+
+            foreach (var set in child.EnumerateKeysDepthFirst(resultElements))
+            {
+                yield return set;
+            }
+
+            resultElements.Pop();
+        }
+    }
+
+    /// <summary>
     /// Gets the values stored in this SetTrieNode and its children
     /// in depth-first order.
     /// </summary>
@@ -479,6 +511,47 @@ internal sealed class SetTrieNode<TKey, TValue, TStore, TAccessor>
                 {
                     yield return new(set, value);
                 }
+            }
+
+            foreach (var (element, child) in node._children)
+            {
+                nodes.Enqueue((child, new(backtrackingNode, element)));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets the keys stored in this SetTrieNode and its children
+    /// in breadth-first order.
+    /// </summary>
+    /// <returns>An enumerable with an enumerator that yields the
+    /// keys stored in this SetTrieNode and its children
+    /// in breadth-first order.</returns>
+    internal IEnumerable<HashSet<TKey>> EnumerateKeysBreadthFirst()
+    {
+        var nodes =
+            new Queue<(
+                SetTrieNode<TKey, TValue, TStore, TAccessor>,
+                BacktrackingNode<TKey>
+            )>();
+        nodes.Enqueue((this, new()));
+
+        while (nodes.Count > 0)
+        {
+            var (node, backtrackingNode) = nodes.Dequeue();
+
+            if (node._hasValue)
+            {
+                var btNode = backtrackingNode;
+                var set = new HashSet<TKey>();
+
+                while (btNode.Parent is not null)
+                {
+                    set.Add(btNode.Value!);
+                    btNode = btNode.Parent;
+                }
+
+                yield return set;
             }
 
             foreach (var (element, child) in node._children)

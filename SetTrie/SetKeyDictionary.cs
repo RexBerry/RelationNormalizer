@@ -1083,8 +1083,8 @@ public class SetKeyDictionary<TKey, TValue>
     /// Wraps an enumerable of the key-value pairs in this SetKeyDictionary.
     /// </summary>
     /// <param name="enumerable">The enumerable to wrap.</param>
-    /// <returns>An enumerable with an enumerator that yields the
-    /// key-value pairs in thie SetKeyDictionary and is automatically
+    /// <returns>An enumerable with an enumerator that yields
+    /// key-value pairs in this SetKeyDictionary and is automatically
     /// invalidated when modifications are made.</returns>
     /// <exception cref="InvalidOperationException">When the enumerator is
     /// invalidated due to modifications.</exception>
@@ -1113,7 +1113,7 @@ public class SetKeyDictionary<TKey, TValue>
     /// Wraps an enumerable of the values in this SetKeyDictionary.
     /// </summary>
     /// <param name="enumerable">The enumerable to wrap.</param>
-    /// <returns>An enumerable with an enumerator that yields the
+    /// <returns>An enumerable with an enumerator that yields
     /// values in this SetKeyDictionary and is automatically
     /// invalidated when modifications are made.</returns>
     /// <exception cref="InvalidOperationException">When the enumerator is
