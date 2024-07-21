@@ -300,6 +300,7 @@ internal class SchemaNormalizer
         var result = new SetKeyMultimap<int, int>();
 
         foreach (
+            // Breadth first is "nicer" because it orders by size
             var determinantSet in functionalDependencies.GetKeysBreadthFirst()
         )
         {
@@ -321,6 +322,7 @@ internal class SchemaNormalizer
                 // The only determinant set that could be a superset of `determinant`
                 // is `determinant` itself, since all determinant sets are minimal.
                 foreach (
+                    // Breadth first likely to find a match quicker
                     var otherDeterminantSet in determinantSetCandidates.GetSubsetsBreadthFirst(
                         otherAttributes
                     )
@@ -347,6 +349,177 @@ internal class SchemaNormalizer
         return result;
     }
 
+    /// <summary>
+    /// Normalize the relation schema.
+    /// </summary>
+    /// <param name="targetNormalForm">The normal form to target.</param>
+    /// <returns>The relation schemas in the
+    /// normalized database schema and their normal forms.</returns>
+    /// <exception cref="ArgumentException"><c>targetNormalForm</c>
+    /// is not a valid normal form.</exception>
+    private IEnumerable<(RelationSchema, NormalForm)> Normalize(
+        NormalForm targetNormalForm
+    )
+    {
+        if (targetNormalForm is NormalForm.First)
+        {
+            yield return CreateRelationSchema(
+                Enumerable.Range(0, AttributeCount).ToHashSet()
+            );
+            yield break;
+        }
+
+        var removeTransitive = targetNormalForm switch
+        {
+            NormalForm.First => false,
+            NormalForm.Second => false,
+            NormalForm.Third => true,
+            NormalForm.BoyceCodd => true,
+            _
+                => throw new ArgumentException(
+                    "Invalid normal form",
+                    nameof(targetNormalForm)
+                ),
+        };
+
+        CalculateMinimalDeterminantSets();
+        var cover = CalculateCover(removeTransitive);
+
+        var tables = new SetFamily<int>();
+
+        foreach (var determinantSet in cover.Keys)
+        {
+            var dependentSet = cover[determinantSet];
+            var tableAttributes = determinantSet.ToHashSet();
+            tableAttributes.UnionWith(dependentSet);
+            tables.AddWithMaximalSetsInvariant(tableAttributes);
+        }
+
+        // Prevent attributes from disappearing.
+        // This could occur otherwise if an attribute is not in any dependent
+        // set in a non-trivial functional dependency and is not
+        // is any minimal determinant set.
+
+        var candidateKeys = CalculateCandidateKeys();
+        var hasTableWithCandidateKey = false;
+
+        foreach (var candidateKey in candidateKeys)
+        {
+            if (tables.ContainsSupersetOf(candidateKey))
+            {
+                hasTableWithCandidateKey = true;
+                break;
+            }
+        }
+
+        if (!hasTableWithCandidateKey)
+        {
+            tables.AddWithMaximalSetsInvariant(
+                candidateKeys.GetSetsBreadthFirst().First()
+            );
+        }
+
+        // Order results by descending table size
+        // Looks nicer to whoever views the results
+        foreach (var table in tables.GetSetsBreadthFirst().Reverse())
+        {
+            yield return CreateRelationSchema(table);
+        }
+    }
+
+    /// <summary>
+    /// Creates a relation schema and determines its normal form.
+    /// </summary>
+    /// <param name="relationAttributes">The attributes to include
+    /// in the relation schema.</param>
+    /// <returns>A relation schema and its normal form.</returns>
+    /// <exception cref="IndexOutOfRangeException">
+    /// An attribute in <c>relationAttributes</c> does not exist
+    /// in the relation to normalize.</exception>
+    internal (RelationSchema, NormalForm) CreateRelationSchema(
+        IReadOnlySet<int> relationAttributes
+    )
+    {
+        var keys = CalculateCandidateKeys(relationAttributes)
+            .Where(value => value.IsSubsetOf(relationAttributes))
+            .ToSetFamily();
+
+        var primaryKey = keys.GetSetsBreadthFirst().First();
+        var uniqueKeys = keys.GetSetsBreadthFirst().Skip(1);
+
+        var is2NF = true;
+        var is3NF = true;
+        var isBCNF = true;
+
+        foreach (var attribute in relationAttributes)
+        {
+            var attributeAsSet = (HashSet<int>)[attribute];
+
+            foreach (
+                var determinantSet in _attributeMinimalDeterminantSets[
+                    attribute
+                ]
+            )
+            {
+                if (determinantSet.Contains(attribute))
+                {
+                    // Trivial functional dependency
+                    continue;
+                }
+
+                if (!determinantSet.IsSubsetOf(relationAttributes))
+                {
+                    continue;
+                }
+
+                var isPrimeAttribute = keys.ContainsSupersetOf(attributeAsSet);
+
+                // `keys` cannot contains a proper subset of `determinantSet`
+
+                if (keys.ContainsProperSupersetOf(determinantSet))
+                {
+                    isBCNF = false;
+
+                    if (!isPrimeAttribute)
+                    {
+                        is2NF = false;
+                        is3NF = false;
+                        break;
+                    }
+                }
+
+                if (!keys.Contains(determinantSet))
+                {
+                    isBCNF = false;
+
+                    // Check if not prime attribute
+                    if (!isPrimeAttribute)
+                    {
+                        is3NF = false;
+                    }
+                }
+            }
+        }
+
+        var relationSchema = new RelationSchema(
+            relationAttributes.Select(value => _attributeNames[value]),
+            primaryKey.Select(value => _attributeNames[value]).ToHashSet(),
+            uniqueKeys.Select(value =>
+                value.Select(value => _attributeNames[value]).ToHashSet()
+            )
+        );
+
+        var normalForm = isBCNF
+            ? NormalForm.BoyceCodd
+            : is3NF
+                ? NormalForm.Third
+                : is2NF
+                    ? NormalForm.Second
+                    : NormalForm.First;
+
+        return (relationSchema, normalForm);
+    }
+
     // Temporary method for debugging
     public void PrintInfo()
     {
@@ -355,18 +528,18 @@ internal class SchemaNormalizer
 
         foreach (
             var (
-                index,
-                determinants
+                attribute,
+                determinantSets
             ) in _attributeMinimalDeterminantSets.WithIndex()
         )
         {
-            var attributeName = _attributeNames[index];
+            var attributeName = _attributeNames[attribute];
 
-            foreach (var determinant in determinants)
+            foreach (var determinantSet in determinantSets)
             {
-                var determinantNames = determinant.Select(value =>
-                    _attributeNames[value]
-                );
+                var determinantNames = determinantSet
+                    .OrderBy(value => value)
+                    .Select(value => _attributeNames[value]);
                 Console.WriteLine(
                     $"{string.Join(", ", determinantNames)} -> {attributeName}"
                 );
@@ -376,45 +549,65 @@ internal class SchemaNormalizer
 
         foreach (var candidateKey in candidateKeys)
         {
-            var attributeNames = candidateKey.Select(value =>
-                _attributeNames[value]
-            );
+            var attributeNames = candidateKey
+                .OrderBy(value => value)
+                .Select(value => _attributeNames[value]);
             Console.WriteLine(string.Join(", ", attributeNames));
         }
         Console.WriteLine();
 
-        var cover = CalculateCover(true);
-
-        foreach (var determinant in cover.Keys)
+        foreach (var arg in (bool[])[false, true])
         {
-            var dependent = cover[determinant];
-            var determinantNames = determinant.Select(value =>
-                _attributeNames[value]
-            );
-            var dependentNames = dependent.Select(value =>
-                _attributeNames[value]
-            );
-            Console.WriteLine(
-                $"{string.Join(", ", determinantNames)} -> {string.Join(", ", dependentNames)}"
-            );
+            var cover = CalculateCover(arg);
+
+            foreach (var determinantSet in cover.Keys)
+            {
+                var dependentSet = cover[determinantSet];
+                var determinantNames = determinantSet
+                    .OrderBy(value => value)
+                    .Select(value => _attributeNames[value]);
+                var dependentNames = dependentSet
+                    .OrderBy(value => value)
+                    .Select(value => _attributeNames[value]);
+                Console.WriteLine(
+                    $"{string.Join(", ", determinantNames)} -> {string.Join(", ", dependentNames)}"
+                );
+            }
+            Console.WriteLine();
         }
-        Console.WriteLine();
 
-        cover = CalculateCover(false);
+        foreach (
+            var arg in (NormalForm[])
 
-        foreach (var determinant in cover.Keys)
+                [
+                    NormalForm.First,
+                    NormalForm.Second,
+                    NormalForm.Third,
+                    NormalForm.BoyceCodd
+                ]
+        )
         {
-            var dependent = cover[determinant];
-            var determinantNames = determinant.Select(value =>
-                _attributeNames[value]
-            );
-            var dependentNames = dependent.Select(value =>
-                _attributeNames[value]
-            );
             Console.WriteLine(
-                $"{string.Join(", ", determinantNames)} -> {string.Join(", ", dependentNames)}"
+                "==============================================="
             );
+            foreach (var (table, normalForm) in Normalize(arg))
+            {
+                Console.WriteLine(normalForm.Name());
+                Console.WriteLine(
+                    $"({string.Join(", ", table.Attributes.OrderBy(value => _attributeIndexes[value]))})"
+                );
+                Console.WriteLine(
+                    $"{string.Join(", ", table.PrimaryKey.OrderBy(value => _attributeIndexes[value]))}"
+                );
+
+                foreach (var uniqueKey in table.UniqueKeys)
+                {
+                    Console.WriteLine(
+                        $"{string.Join(", ", uniqueKey.OrderBy(value => _attributeIndexes[value]))}"
+                    );
+                }
+                Console.WriteLine();
+            }
         }
-        Console.WriteLine();
     }
 }
