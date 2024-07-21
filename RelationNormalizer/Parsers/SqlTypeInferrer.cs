@@ -60,8 +60,8 @@ internal class SqlTypeInferrer
             options,
             timeout
         );
-        DateRegex = new($"^{datePattern}$");
-        TimeRegex = new($"^T?{timePattern}$");
+        DateRegex = new($"^{datePattern}$", options, timeout);
+        TimeRegex = new($"^T?{timePattern}$", options, timeout);
         DateTimeRegex = new(
             $"^{datePattern}(?:\\s+|T)?{timePattern}$",
             options,
