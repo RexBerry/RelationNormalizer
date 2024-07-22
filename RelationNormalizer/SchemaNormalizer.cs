@@ -299,8 +299,10 @@ internal class SchemaNormalizer
                 .ToArray();
         var result = new SetKeyMultimap<int, int>();
 
+        Logging.Info("Found the following transitive dependencies:");
+
         foreach (
-            // Breadth first is "nicer" because it orders by size
+            // Breadth first order is nicer for logging
             var determinantSet in functionalDependencies.GetKeysBreadthFirst()
         )
         {
@@ -333,6 +335,11 @@ internal class SchemaNormalizer
                         continue;
                     }
 
+                    var attributeName = _attributeNames[dependentAttribute];
+                    Logging.Info(
+                        $"    {AttributesToString(determinantSet)} -> {AttributesToString(otherDeterminantSet)} -> {{{attributeName}}}"
+                    );
+
                     // Transitive dependency
                     dependentSet.Remove(dependentAttribute);
                     determinantSetCandidates.Remove(determinantSet);
@@ -357,10 +364,19 @@ internal class SchemaNormalizer
     /// normalized database schema and their normal forms.</returns>
     /// <exception cref="ArgumentException"><c>targetNormalForm</c>
     /// is not a valid normal form.</exception>
-    private IEnumerable<(RelationSchema, NormalForm)> Normalize(
+    public IEnumerable<(RelationSchema, NormalForm)> Normalize(
         NormalForm targetNormalForm
     )
     {
+        CalculateMinimalDeterminantSets();
+
+        var (_, initialNormalForm) = CreateRelationSchema(
+            Enumerable.Range(0, AttributeCount).ToHashSet()
+        );
+        Logging.Info(
+            $"The input relation schema is in {initialNormalForm.Name()}."
+        );
+
         if (targetNormalForm is NormalForm.First)
         {
             yield return CreateRelationSchema(
@@ -382,14 +398,62 @@ internal class SchemaNormalizer
                 ),
         };
 
-        CalculateMinimalDeterminantSets();
+        var candidateKeys = CalculateCandidateKeys();
+
+        Logging.Info("Found the following candidate keys:");
+
+        // Breadth-first order is nicer for logging
+        foreach (var candidateKey in candidateKeys.GetSetsBreadthFirst())
+        {
+            Logging.Info($"    {AttributesToString(candidateKey)}");
+        }
+
+        Logging.Info(
+            "Found the following partial dependencies on a candidate key:"
+        );
+
+        foreach (var attribute in Enumerable.Range(0, AttributeCount))
+        {
+            var attributeName = _attributeNames[attribute];
+
+            foreach (var candidateKey in candidateKeys)
+            {
+                if (candidateKey.Contains(attribute))
+                {
+                    continue;
+                }
+
+                var keyString = AttributesToString(candidateKey);
+
+                foreach (
+                    var determinantSet in _attributeMinimalDeterminantSets[
+                        attribute
+                    ]
+                        .GetProperSubsetsBreadthFirst(candidateKey)
+                )
+                {
+                    Logging.Info(
+                        $"    {AttributesToString(determinantSet)} -> {{{attributeName}}} ; {keyString} -> {{{attributeName}}}"
+                    );
+                }
+            }
+        }
+
         var cover = CalculateCover(removeTransitive);
 
         var tables = new SetFamily<int>();
 
-        foreach (var determinantSet in cover.Keys)
+        Logging.Info("Reduced set of functional dependencies:");
+
+        // Breadth-first order is nicer for logging
+        foreach (var determinantSet in cover.GetKeysBreadthFirst())
         {
             var dependentSet = cover[determinantSet];
+
+            Logging.Info(
+                $"    {AttributesToString(determinantSet)} -> {AttributesToString(dependentSet)}"
+            );
+
             var tableAttributes = determinantSet.ToHashSet();
             tableAttributes.UnionWith(dependentSet);
             tables.AddWithMaximalSetsInvariant(tableAttributes);
@@ -400,7 +464,6 @@ internal class SchemaNormalizer
         // set in a non-trivial functional dependency and is not
         // is any minimal determinant set.
 
-        var candidateKeys = CalculateCandidateKeys();
         var hasTableWithCandidateKey = false;
 
         foreach (var candidateKey in candidateKeys)
@@ -503,10 +566,16 @@ internal class SchemaNormalizer
         }
 
         var relationSchema = new RelationSchema(
-            relationAttributes.Select(value => _attributeNames[value]),
-            primaryKey.Select(value => _attributeNames[value]).ToHashSet(),
+            relationAttributes
+                .OrderBy(value => value)
+                .Select(value => _attributeNames[value]),
+            primaryKey
+                .OrderBy(value => value)
+                .Select(value => _attributeNames[value]),
             uniqueKeys.Select(value =>
-                value.Select(value => _attributeNames[value]).ToHashSet()
+                value
+                    .OrderBy(value => value)
+                    .Select(value => _attributeNames[value])
             )
         );
 
@@ -521,94 +590,11 @@ internal class SchemaNormalizer
         return (relationSchema, normalForm);
     }
 
-    // Temporary method for debugging
-    public void PrintInfo()
-    {
-        CalculateMinimalDeterminantSets();
-        var candidateKeys = CalculateCandidateKeys();
-
-        foreach (
-            var (
-                attribute,
-                determinantSets
-            ) in _attributeMinimalDeterminantSets.WithIndex()
-        )
-        {
-            var attributeName = _attributeNames[attribute];
-
-            foreach (var determinantSet in determinantSets)
-            {
-                var determinantNames = determinantSet
-                    .OrderBy(value => value)
-                    .Select(value => _attributeNames[value]);
-                Console.WriteLine(
-                    $"{string.Join(", ", determinantNames)} -> {attributeName}"
-                );
-            }
-        }
-        Console.WriteLine();
-
-        foreach (var candidateKey in candidateKeys)
-        {
-            var attributeNames = candidateKey
-                .OrderBy(value => value)
-                .Select(value => _attributeNames[value]);
-            Console.WriteLine(string.Join(", ", attributeNames));
-        }
-        Console.WriteLine();
-
-        foreach (var arg in (bool[])[false, true])
-        {
-            var cover = CalculateCover(arg);
-
-            foreach (var determinantSet in cover.Keys)
-            {
-                var dependentSet = cover[determinantSet];
-                var determinantNames = determinantSet
-                    .OrderBy(value => value)
-                    .Select(value => _attributeNames[value]);
-                var dependentNames = dependentSet
-                    .OrderBy(value => value)
-                    .Select(value => _attributeNames[value]);
-                Console.WriteLine(
-                    $"{string.Join(", ", determinantNames)} -> {string.Join(", ", dependentNames)}"
-                );
-            }
-            Console.WriteLine();
-        }
-
-        foreach (
-            var arg in (NormalForm[])
-
-                [
-                    NormalForm.First,
-                    NormalForm.Second,
-                    NormalForm.Third,
-                    NormalForm.BoyceCodd
-                ]
-        )
-        {
-            Console.WriteLine(
-                "==============================================="
-            );
-            foreach (var (table, normalForm) in Normalize(arg))
-            {
-                Console.WriteLine(normalForm.Name());
-                Console.WriteLine(
-                    $"({string.Join(", ", table.Attributes.OrderBy(value => _attributeIndexes[value]))})"
-                );
-                Console.WriteLine(
-                    $"{string.Join(", ", table.PrimaryKey.OrderBy(value => _attributeIndexes[value]))}"
-                );
-
-                foreach (var uniqueKey in table.UniqueKeys)
-                {
-                    Console.WriteLine(
-                        $"{string.Join(", ", uniqueKey.OrderBy(value => _attributeIndexes[value]))}"
-                    );
-                }
-                Console.WriteLine();
-            }
-        }
-    }
+    /// <summary>
+    /// Converts a set of attributes to a string.
+    /// </summary>
+    /// <param name="attributes">The attributes.</param>
+    /// <returns>A human-readable string of the set of attributes.</returns>
+    private string AttributesToString(IReadOnlySet<int> attributes) =>
+        $"{{{string.Join(", ", attributes.OrderBy(value => value).Select(value => _attributeNames[value]))}}}";
 }

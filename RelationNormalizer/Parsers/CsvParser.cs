@@ -94,7 +94,7 @@ internal class CsvParser
         {
             if (i == row.Length)
             {
-                throw new CsvParseException("Unterminated string literal")
+                throw new CsvParseException("Unterminated string literal.")
                 {
                     Column = i
                 };

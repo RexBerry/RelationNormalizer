@@ -18,12 +18,16 @@ internal class RelationSchema
     /// <summary>
     /// The primary key of the relation schema.
     /// </summary>
-    public IReadOnlySet<string> PrimaryKey { get; private init; }
+    public IReadOnlyList<string> PrimaryKey { get; private init; }
 
     /// <summary>
     /// The unique keys (not including the primary key) of the relation schema.
     /// </summary>
-    public IEnumerable<IReadOnlySet<string>> UniqueKeys { get; private init; }
+    public IReadOnlyList<IReadOnlyList<string>> UniqueKeys
+    {
+        get;
+        private init;
+    }
 
     /// <summary>
     /// Constructs a complete relation schema.
@@ -37,8 +41,8 @@ internal class RelationSchema
     /// </exception>
     public RelationSchema(
         IEnumerable<string> attributeNames,
-        IReadOnlySet<string> primaryKey,
-        IEnumerable<IReadOnlySet<string>> uniqueKeys
+        IEnumerable<string> primaryKey,
+        IEnumerable<IEnumerable<string>> uniqueKeys
     )
     {
         var validNames = attributeNames.ToHashSet();
@@ -56,7 +60,7 @@ internal class RelationSchema
 
         foreach (var uniqueKey in uniqueKeys)
         {
-            if (uniqueKey.SetEquals(primaryKey))
+            if (uniqueKey.ToHashSet().SetEquals(primaryKey))
             {
                 continue;
             }
@@ -74,7 +78,7 @@ internal class RelationSchema
         }
 
         Attributes = attributeNames.ToArray();
-        PrimaryKey = primaryKey.ToHashSet();
-        UniqueKeys = uniqueKeys.Select(value => value.ToHashSet()).ToArray();
+        PrimaryKey = primaryKey.ToArray();
+        UniqueKeys = uniqueKeys.Select(value => value.ToArray()).ToArray();
     }
 }

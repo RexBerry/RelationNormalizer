@@ -507,7 +507,7 @@ internal sealed class SetTrieNode<TKey, TValue, TStore, TAccessor>
                     btNode = btNode.Parent;
                 }
 
-                foreach (var value in TAccessor.Enumerate(_storage!))
+                foreach (var value in TAccessor.Enumerate(node._storage!))
                 {
                     yield return new(set, value);
                 }
@@ -579,7 +579,7 @@ internal sealed class SetTrieNode<TKey, TValue, TStore, TAccessor>
 
             if (node._hasValue)
             {
-                foreach (var value in TAccessor.Enumerate(_storage!))
+                foreach (var value in TAccessor.Enumerate(node._storage!))
                 {
                     yield return value;
                 }
@@ -1188,7 +1188,7 @@ internal sealed class SetTrieNode<TKey, TValue, TStore, TAccessor>
                     btNode = btNode.Parent;
                 }
 
-                foreach (var value in TAccessor.Enumerate(_storage!))
+                foreach (var value in TAccessor.Enumerate(node._storage!))
                 {
                     yield return new(set, value);
                 }
@@ -1240,7 +1240,7 @@ internal sealed class SetTrieNode<TKey, TValue, TStore, TAccessor>
 
             if (node._hasValue)
             {
-                foreach (var value in TAccessor.Enumerate(_storage!))
+                foreach (var value in TAccessor.Enumerate(node._storage!))
                 {
                     yield return value;
                 }
@@ -1526,7 +1526,7 @@ internal sealed class SetTrieNode<TKey, TValue, TStore, TAccessor>
                         btNode = btNode.Parent;
                     }
 
-                    foreach (var value in TAccessor.Enumerate(_storage!))
+                    foreach (var value in TAccessor.Enumerate(node._storage!))
                     {
                         yield return new(set, value);
                     }
@@ -1586,7 +1586,7 @@ internal sealed class SetTrieNode<TKey, TValue, TStore, TAccessor>
             {
                 if (node._hasValue)
                 {
-                    foreach (var value in TAccessor.Enumerate(_storage!))
+                    foreach (var value in TAccessor.Enumerate(node._storage!))
                     {
                         yield return value;
                     }
