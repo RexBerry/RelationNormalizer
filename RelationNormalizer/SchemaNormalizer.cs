@@ -474,10 +474,11 @@ internal class SchemaNormalizer
 
                 var isPrimeAttribute = keys.ContainsSupersetOf(attributeAsSet);
 
-                // `keys` cannot contains a proper subset of `determinantSet`
+                // `keys` cannot contain a proper subset of `determinantSet`
 
                 if (keys.ContainsProperSupersetOf(determinantSet))
                 {
+                    // Partial functional dependency on a candidate key
                     isBCNF = false;
 
                     if (!isPrimeAttribute)
@@ -490,9 +491,9 @@ internal class SchemaNormalizer
 
                 if (!keys.Contains(determinantSet))
                 {
+                    // Determinant set is not a superkey
                     isBCNF = false;
 
-                    // Check if not prime attribute
                     if (!isPrimeAttribute)
                     {
                         is3NF = false;
