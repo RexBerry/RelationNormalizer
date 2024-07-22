@@ -3,5 +3,9 @@ Course, Professor -> classRoom
 Course -> CourseStart, CourseEnd
 Professor -> ProfessorEmail
 end
+Course ->> Professor
+Course ->> classRoom
+StudentID ->> Course
+end
 StudentID, Course
 end

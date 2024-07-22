@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Linq;
+using System.Text;
 using RelationNormalizer.Parsers;
 using RelationNormalizer.SqlTypes;
 using RelationNormalizer.Utils;
@@ -153,6 +154,87 @@ internal class Program
             );
 
             normalizer.AddFunctionalDependency(determinantSet, dependentSet);
+        }
+
+        // Get multivalued dependencies
+
+        Console.WriteLine(
+            "Enter multivalued dependencies (e.g., A, B ->> C, D). Enter \"end\" without quotes to stop:"
+        );
+
+        var multivaluedDependencies =
+            new List<(HashSet<string> lhs, HashSet<string> rhs)>();
+
+        while (true)
+        {
+            var row = Console.ReadLine();
+
+            if (row is null || row.ToLower().Trim() == "end")
+            {
+                break;
+            }
+
+            if (row.Length == 0)
+            {
+                continue;
+            }
+
+            var (mvdLhsSet, mvdRhsSet) = ParseMultivaluedDependency(row);
+
+            multivaluedDependencies.Add((mvdLhsSet, mvdRhsSet));
+        }
+
+        // Validate multivalued dependencies
+
+        static int RowCompare(string[] lhs, string[] rhs)
+        {
+            for (var i = 0; i < lhs.Length; ++i)
+            {
+                var order = lhs[i].CompareTo(rhs[i]);
+
+                if (order != 0)
+                {
+                    return order;
+                }
+            }
+
+            return 0;
+        }
+
+        // Distinct rows
+        var sortedData = table[1..];
+        sortedData.Sort(RowCompare);
+        var tableData = new List<string[]>();
+
+        for (var i = 0; i < sortedData.Count; ++i)
+        {
+            if (i != 0 && RowCompare(sortedData[i - 1], sortedData[i]) == 0)
+            {
+                continue;
+            }
+
+            tableData.Add(sortedData[i]);
+        }
+
+        var columnIndexes = columnNames
+            .Select((value, index) => (value, index))
+            .ToDictionary();
+
+        foreach (var (lhs, rhs) in multivaluedDependencies)
+        {
+            if (
+                !ValidateMultivaluedDependency(
+                    lhs,
+                    rhs,
+                    tableData,
+                    columnIndexes
+                )
+            )
+            {
+                Logging.Warn(
+                    $"The multivalued dependency {{{string.Join(", ", lhs)}}} ->> {{{string.Join(", ", rhs)}}} is invalid."
+                );
+            }
         }
 
         // Get unique keys
@@ -354,6 +436,37 @@ internal class Program
         return (determinantSet, dependentSet);
     }
 
+    private static (
+        HashSet<string> mvdLhsSet,
+        HashSet<string> mvdRhsSet
+    ) ParseMultivaluedDependency(string value)
+    {
+        var sides = value.Split("->>");
+
+        if (sides.Length != 2)
+        {
+            Console.WriteLine("Error: Unable to parse functional dependency.");
+            Environment.Exit(1);
+        }
+
+        var mvdLhsSet = ParseAttributeNames(sides[0]);
+        var mvdRhsSet = ParseAttributeNames(sides[1]);
+
+        if (mvdLhsSet.Count == 0)
+        {
+            Console.WriteLine("Error: The LHS set is empty.");
+            Environment.Exit(1);
+        }
+
+        if (mvdRhsSet.Count == 0)
+        {
+            Console.WriteLine("Error: The RHS set is empty.");
+            Environment.Exit(1);
+        }
+
+        return (mvdLhsSet, mvdRhsSet);
+    }
+
     private static HashSet<string> ParseAttributeNames(string value)
     {
         return
@@ -361,11 +474,159 @@ internal class Program
             .. value
                 .Split(',')
                 .Select(value =>
-                    value
-                        .Normalize(System.Text.NormalizationForm.FormKC)
-                        .Trim()
+                    value.Normalize(NormalizationForm.FormKC).Trim()
                 )
         ];
+    }
+
+    private static bool ValidateMultivaluedDependency(
+        HashSet<string> mvdLhsSet,
+        HashSet<string> mvdRhsSet,
+        List<string[]> tableData,
+        Dictionary<string, int> columnIndexes
+    )
+    {
+        if (tableData.Count == 0)
+        {
+            return true;
+        }
+
+        mvdRhsSet = [.. mvdRhsSet];
+        mvdRhsSet.ExceptWith(mvdLhsSet);
+
+        if (mvdRhsSet.Count == 0)
+        {
+            // Trivial MVD
+            return true;
+        }
+
+        var lhsColumns = mvdLhsSet
+            .Select(value => columnIndexes[value])
+            .OrderBy(value => value)
+            .ToArray();
+        var rhsColumns = mvdRhsSet
+            .Select(value => columnIndexes[value])
+            .OrderBy(value => value)
+            .ToArray();
+        var otherColumns = columnIndexes
+            .Values.Except(lhsColumns)
+            .Except(rhsColumns)
+            .OrderBy(value => value)
+            .ToArray();
+
+        var columnCompareOrder = lhsColumns
+            .Concat(rhsColumns)
+            .Concat(otherColumns);
+
+        int RowCompare(string[] lhs, string[] rhs)
+        {
+            foreach (var columnIndex in columnCompareOrder)
+            {
+                var order = lhs[columnIndex].CompareTo(rhs[columnIndex]);
+
+                if (order != 0)
+                {
+                    return order;
+                }
+            }
+
+            return 0;
+        }
+
+        tableData.Sort(RowCompare);
+
+        static bool RowEquals(string[] row1, string[] row2, int[] indexes)
+        {
+            foreach (var index in indexes)
+            {
+                if (row1[index] != row2[index])
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        for (var beginLhs = 0; beginLhs < tableData.Count; )
+        {
+            var beginLhsRow = tableData[beginLhs];
+            var endLhs = beginLhs;
+
+            // Find block where column values from the MVD LHS are equal
+            for (
+                ;
+                endLhs < tableData.Count
+                    && RowEquals(beginLhsRow, tableData[endLhs], lhsColumns);
+                ++endLhs
+            ) { }
+
+            var beginRhs = beginLhs;
+            var endRhs = beginRhs;
+
+            // Find block where column values from the MVD RHS are equal
+            for (
+                ;
+                endRhs < endLhs
+                    && RowEquals(beginLhsRow, tableData[endRhs], rhsColumns);
+                ++endRhs
+            ) { }
+
+            var lhsBlockSize = endLhs - beginLhs;
+            var rhsBlockSize = endRhs - beginRhs;
+
+            if (lhsBlockSize % rhsBlockSize != 0)
+            {
+                return false;
+            }
+
+            // Check that RHS blocks are equal in size
+
+            for (; beginRhs < endLhs; beginRhs += rhsBlockSize)
+            {
+                var beginRhsRow = tableData[beginRhs];
+
+                if (
+                    beginRhs > beginLhs
+                    && RowEquals(
+                        beginRhsRow,
+                        tableData[beginRhs - 1],
+                        rhsColumns
+                    )
+                )
+                {
+                    return false;
+                }
+
+                for (var i = beginRhs + 1; i < beginRhs + rhsBlockSize; ++i)
+                {
+                    if (!RowEquals(beginRhsRow, tableData[i], rhsColumns))
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            // Check that other column values repeat
+
+            for (var i = beginLhs + rhsBlockSize; i < endLhs; ++i)
+            {
+                if (
+                    !RowEquals(
+                        tableData[i],
+                        tableData[i - rhsBlockSize],
+                        otherColumns
+                    )
+                )
+                {
+                    return false;
+                }
+            }
+
+            beginLhs = endLhs;
+        }
+
+        return true;
     }
 
     private static string GenerateSqlCode(
