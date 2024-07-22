@@ -1,0 +1,7 @@
+OrderID -> CustomerID
+CustomerID -> CustomerName
+DrinkID -> DrinkName
+end
+DrinkID ->> Milk
+end
+end

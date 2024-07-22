@@ -1,0 +1,7 @@
+OrderID,CustomerID,CustomerName,DrinkID,DrinkName,Milk
+1001,1,Alice,1,Chocolate Milk,ND
+1001,1,Alice,1,Chocolate Milk,D
+1002,1,Alice,2,Whole Milk,D
+1003,2,Bob,3,Strawberry Milk,ND
+1003,2,Bob,3,Strawberry Milk,D
+1003,2,Bob,4,Soy Milk,ND

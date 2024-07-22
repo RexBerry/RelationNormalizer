@@ -145,4 +145,15 @@ value of the RHS columns, the MVD is valid.
 
 ## Normalizing to 4NF
 
-Normalizing to 4NF is currently not implemented.
+For a multivalued dependency $X \twoheadrightarrow Y$, we can partition the
+relation into three sets of attributes $A$, $B$, and $C$ such that $A = X$,
+$B \subseteq Y$, and $A \cup B = X \cup Y$. Then, if we wish to achieve 4NF, we
+remove functional dependencies with determinant attribute(s) in $B$ and
+dependent attribute(s) in $C$ or vice versa. This is technically not always
+correct, but it should be correct in any sane specification with multivalued
+dependencies. Still, we warn the user when this occurs.
+
+When it comes to generating tables, for every table, the set of attributes $R$
+into that table is broken up into $R \cap (A \cup B)$ and $R \cap (A \cup C)$.
+Since we only keep maximal sets of attributes, this has no effect if $R$ was
+already a subset of $A \cup B$ or $A \cup C$.

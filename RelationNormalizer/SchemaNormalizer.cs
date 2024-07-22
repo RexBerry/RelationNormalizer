@@ -39,6 +39,19 @@ internal class SchemaNormalizer
     private readonly SetFamily<int>[] _attributeMinimalDeterminantSets;
 
     /// <summary>
+    /// The provided multivalued dependencies.
+    /// </summary>
+    /// <remarks>
+    /// If the relation contains the attributes {A, B, C},
+    /// and the multivalued dependency {A} ->> {B} is added,
+    /// the tuple ({A, B}, {A, C}) will be added to this list.
+    /// </remarks>
+    private readonly List<(
+        HashSet<int>,
+        HashSet<int>
+    )> _multivaluedDependencies;
+
+    /// <summary>
     /// Creates a new schema normalizer from the given attribute names.
     /// </summary>
     /// <param name="attributeNames">The names of the attributes
@@ -57,6 +70,7 @@ internal class SchemaNormalizer
         [
             .. _attributeDeterminantSets.Select(_ => new SetFamily<int>())
         ];
+        _multivaluedDependencies = [];
     }
 
     /// <summary>
@@ -74,10 +88,9 @@ internal class SchemaNormalizer
         IReadOnlySet<string> dependentSet
     )
     {
-        HashSet<int> determinantAttributes =
-        [
-            .. determinantSet.Select(name => _attributeIndexes[name])
-        ];
+        var determinantAttributes = determinantSet
+            .Select(value => _attributeIndexes[value])
+            .ToHashSet();
 
         foreach (var dependentAttributeName in dependentSet)
         {
@@ -91,6 +104,48 @@ internal class SchemaNormalizer
             _attributeDeterminantSets[dependentAttribute]
                 .Add(determinantAttributes);
         }
+    }
+
+    /// <summary>
+    /// Adds a multivalued dependency.
+    /// </summary>
+    /// <param name="lhs">The attributes on the
+    /// LHS of the multivalued dependency.</param>
+    /// <param name="rhs">The attributes on the
+    /// RHS of the multivalued dependency.</param>
+    /// <exception cref="IndexOutOfRangeException">One of the attributes
+    /// in <c>lhs</c> or <c>rhs</c> does not exist in
+    /// the relation to normalize.</exception>
+    public void AddMultivaluedDependency(
+        IReadOnlySet<string> lhs,
+        IReadOnlySet<string> rhs
+    )
+    {
+        var lhsAttributes = lhs.Select(value => _attributeIndexes[value])
+            .ToHashSet();
+        var rhsAttributes = rhs.Select(value => _attributeIndexes[value])
+            .ToHashSet();
+        rhsAttributes.ExceptWith(lhsAttributes);
+
+        if (rhsAttributes.Count == 0)
+        {
+            // Trivial MVD
+            return;
+        }
+
+        var otherAttributes = Enumerable.Range(0, AttributeCount).ToHashSet();
+        otherAttributes.ExceptWith(lhsAttributes);
+        otherAttributes.ExceptWith(rhsAttributes);
+
+        if (otherAttributes.Count == 0)
+        {
+            return;
+        }
+
+        otherAttributes.UnionWith(lhsAttributes);
+        lhsAttributes.UnionWith(rhsAttributes);
+
+        _multivaluedDependencies.Add((lhsAttributes, otherAttributes));
     }
 
     /// <summary>
@@ -195,6 +250,67 @@ internal class SchemaNormalizer
             }
 
             determinantSets.Add((HashSet<int>)[attribute]);
+        }
+    }
+
+    /// <summary>
+    /// Removes functional dependencies that conflict with the
+    /// provided multivalued dependencies.
+    /// </summary>
+    private void RemoveFunctionalDependenciesSpanningMVDs()
+    {
+        // Remove functional dependencies that "span" MVDs.
+        // Because this might not always be correct, warn
+        // the user when this happens.
+        // However, it should be correct if the functional
+        // dependencies and MVDs aren't silly.
+
+        foreach (var (attributes1, attributes2) in _multivaluedDependencies)
+        {
+            var lhsAttributes = attributes1.Intersect(attributes2).ToHashSet();
+            var rhsAttributes = attributes1.Except(attributes2).ToHashSet();
+            var otherAttributes = attributes2.Except(attributes1).ToHashSet();
+
+            var mvdString =
+                $"{AttributesToString(lhsAttributes)} ->> {AttributesToString(rhsAttributes)}";
+
+            foreach (
+                var (attributes, other) in ((HashSet<int>, HashSet<int>)[])
+
+                    [
+                        (otherAttributes, rhsAttributes),
+                        (rhsAttributes, otherAttributes)
+                    ]
+            )
+            {
+                foreach (var dependentAttribute in attributes)
+                {
+                    var dependentSetString = AttributesToString(
+                        (HashSet<int>)[dependentAttribute]
+                    );
+
+                    var determinantSets = _attributeMinimalDeterminantSets[
+                        dependentAttribute
+                    ];
+                    var determinantSetsToRemove = new SetFamily<int>();
+
+                    foreach (var determinantSet in determinantSets)
+                    {
+                        if (determinantSet.Overlaps(other))
+                        {
+                            determinantSetsToRemove.Add(determinantSet);
+                        }
+                    }
+
+                    foreach (var determinantSet in determinantSetsToRemove)
+                    {
+                        Logging.Warn(
+                            $"Removing {AttributesToString(determinantSet)} -> {dependentSetString} due to {mvdString}"
+                        );
+                        determinantSets.Remove(determinantSet);
+                    }
+                }
+            }
         }
     }
 
@@ -324,7 +440,7 @@ internal class SchemaNormalizer
                 // The only determinant set that could be a superset of `determinant`
                 // is `determinant` itself, since all determinant sets are minimal.
                 foreach (
-                    // Breadth first likely to find a match quicker
+                    // Breadth first to find a small determinant set
                     var otherDeterminantSet in determinantSetCandidates.GetSubsetsBreadthFirst(
                         otherAttributes
                     )
@@ -370,6 +486,13 @@ internal class SchemaNormalizer
     {
         CalculateMinimalDeterminantSets();
 
+        var targetAtLeast4NF = targetNormalForm is NormalForm.Fourth;
+
+        if (targetAtLeast4NF)
+        {
+            RemoveFunctionalDependenciesSpanningMVDs();
+        }
+
         var (_, initialNormalForm) = CreateRelationSchema(
             Enumerable.Range(0, AttributeCount).ToHashSet()
         );
@@ -391,6 +514,7 @@ internal class SchemaNormalizer
             NormalForm.Second => false,
             NormalForm.Third => true,
             NormalForm.BoyceCodd => true,
+            NormalForm.Fourth => true,
             _
                 => throw new ArgumentException(
                     "Invalid normal form",
@@ -433,7 +557,7 @@ internal class SchemaNormalizer
                 )
                 {
                     Logging.Info(
-                        $"    {AttributesToString(determinantSet)} -> {{{attributeName}}} ; {keyString} -> {{{attributeName}}}"
+                        $"    {AttributesToString(determinantSet)} -> {{{attributeName}}}; {keyString} -> {{{attributeName}}}"
                     );
                 }
             }
@@ -441,11 +565,8 @@ internal class SchemaNormalizer
 
         var cover = CalculateCover(removeTransitive);
 
-        var tables = new SetFamily<int>();
-
         Logging.Info("Reduced set of functional dependencies:");
 
-        // Breadth-first order is nicer for logging
         foreach (var determinantSet in cover.GetKeysBreadthFirst())
         {
             var dependentSet = cover[determinantSet];
@@ -453,10 +574,76 @@ internal class SchemaNormalizer
             Logging.Info(
                 $"    {AttributesToString(determinantSet)} -> {AttributesToString(dependentSet)}"
             );
+        }
 
+        var tables = new SetFamily<int>();
+
+        if (targetAtLeast4NF)
+        {
+            Logging.Info(
+                "The following tables have been broken up to try to achieve 4NF:"
+            );
+        }
+
+        void AddTableFitMVD(
+            IReadOnlySet<int> tableAttributes,
+            IReadOnlySet<int> attributes1,
+            IReadOnlySet<int> attributes2
+        )
+        {
+            if (
+                tableAttributes.IsSubsetOf(attributes1)
+                || tableAttributes.IsSubsetOf(attributes2)
+            )
+            {
+                tables.AddWithMaximalSetsInvariant(tableAttributes);
+                return;
+            }
+
+            // Break up the table based on the MVD
+
+            var attributesString = AttributesToString(tableAttributes);
+            var subtable1 = tableAttributes.Intersect(attributes1).ToHashSet();
+            var subtable2 = tableAttributes.Intersect(attributes2).ToHashSet();
+
+            foreach (var subtable in (HashSet<int>[])[subtable1, subtable2,])
+            {
+                var added = tables.AddWithMaximalSetsInvariant(subtable);
+
+                if (
+                    added
+                    && subtable.Count != 0
+                    && subtable.Count != tableAttributes.Count
+                )
+                {
+                    Logging.Info(
+                        $"    {attributesString} to {AttributesToString(subtable)}"
+                    );
+                }
+            }
+        }
+
+        // Breadth-first order is nicer for logging
+        foreach (var determinantSet in cover.GetKeysBreadthFirst())
+        {
+            var dependentSet = cover[determinantSet];
             var tableAttributes = determinantSet.ToHashSet();
             tableAttributes.UnionWith(dependentSet);
-            tables.AddWithMaximalSetsInvariant(tableAttributes);
+
+            if (!targetAtLeast4NF || _multivaluedDependencies.Count == 0)
+            {
+                tables.AddWithMaximalSetsInvariant(tableAttributes);
+                continue;
+            }
+
+            // Break up the relation based on the provided MVDs
+
+            foreach (
+                var (attributes1, attributes2) in _multivaluedDependencies
+            )
+            {
+                AddTableFitMVD(tableAttributes, attributes1, attributes2);
+            }
         }
 
         // Prevent attributes from disappearing.
@@ -477,9 +664,23 @@ internal class SchemaNormalizer
 
         if (!hasTableWithCandidateKey)
         {
-            tables.AddWithMaximalSetsInvariant(
-                candidateKeys.GetSetsBreadthFirst().First()
-            );
+            var tableAttributes = candidateKeys.GetSetsBreadthFirst().First();
+
+            if (!targetAtLeast4NF || _multivaluedDependencies.Count == 0)
+            {
+                tables.AddWithMaximalSetsInvariant(tableAttributes);
+            }
+            else
+            {
+                // Break up the relation based on the provided MVDs
+
+                foreach (
+                    var (attributes1, attributes2) in _multivaluedDependencies
+                )
+                {
+                    AddTableFitMVD(tableAttributes, attributes1, attributes2);
+                }
+            }
         }
 
         // Order results by descending table size
@@ -513,6 +714,7 @@ internal class SchemaNormalizer
         var is2NF = true;
         var is3NF = true;
         var isBCNF = true;
+        var is4NF = true;
 
         foreach (var attribute in relationAttributes)
         {
@@ -543,6 +745,7 @@ internal class SchemaNormalizer
                 {
                     // Partial functional dependency on a candidate key
                     isBCNF = false;
+                    is4NF = false;
 
                     if (!isPrimeAttribute)
                     {
@@ -556,11 +759,31 @@ internal class SchemaNormalizer
                 {
                     // Determinant set is not a superkey
                     isBCNF = false;
+                    is4NF = false;
 
                     if (!isPrimeAttribute)
                     {
                         is3NF = false;
                     }
+                }
+            }
+        }
+
+        if (is4NF)
+        {
+            foreach (
+                var (attributes1, attributes2) in _multivaluedDependencies
+            )
+            {
+                if (
+                    !(
+                        relationAttributes.IsSubsetOf(attributes1)
+                        || relationAttributes.IsSubsetOf(attributes2)
+                    )
+                )
+                {
+                    is4NF = false;
+                    break;
                 }
             }
         }
@@ -579,13 +802,15 @@ internal class SchemaNormalizer
             )
         );
 
-        var normalForm = isBCNF
-            ? NormalForm.BoyceCodd
-            : is3NF
-                ? NormalForm.Third
-                : is2NF
-                    ? NormalForm.Second
-                    : NormalForm.First;
+        var normalForm = is4NF
+            ? NormalForm.Fourth
+            : isBCNF
+                ? NormalForm.BoyceCodd
+                : is3NF
+                    ? NormalForm.Third
+                    : is2NF
+                        ? NormalForm.Second
+                        : NormalForm.First;
 
         return (relationSchema, normalForm);
     }

@@ -24,6 +24,11 @@ internal enum NormalForm
     /// BCNF
     /// </summary>
     BoyceCodd,
+
+    /// <summary>
+    /// 4NF
+    /// </summary>
+    Fourth,
 }
 
 /// <summary>
@@ -46,6 +51,7 @@ internal static class NormalFormExtensions
             NormalForm.Second => "2NF",
             NormalForm.Third => "3NF",
             NormalForm.BoyceCodd => "BCNF",
+            NormalForm.Fourth => "4NF",
             _
                 => throw new ArgumentException(
                     "Invalid normal form.",

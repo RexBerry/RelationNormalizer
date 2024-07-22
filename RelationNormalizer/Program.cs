@@ -46,6 +46,7 @@ internal class Program
             "2NF" => NormalForm.Second,
             "3NF" => NormalForm.Third,
             "BCNF" => NormalForm.BoyceCodd,
+            "4NF" => NormalForm.Fourth,
             _ => BadNormalForm,
         };
 
@@ -235,6 +236,8 @@ internal class Program
                     $"The multivalued dependency {{{string.Join(", ", lhs)}}} ->> {{{string.Join(", ", rhs)}}} is invalid."
                 );
             }
+
+            normalizer.AddMultivaluedDependency(lhs, rhs);
         }
 
         // Get unique keys
@@ -313,7 +316,7 @@ internal class Program
             -h, --help: Show this message and exit.
 
             normal form: The normal form to target.
-                         Options: 1NF, 2NF, 3NF, BCNF
+                         Options: 1NF, 2NF, 3NF, BCNF, 4NF
                          Default: BCNF
 
             filename: The filename of a CSV file containing a table with attribute names
@@ -513,6 +516,11 @@ internal class Program
             .Except(rhsColumns)
             .OrderBy(value => value)
             .ToArray();
+
+        if (otherColumns.Length == 0)
+        {
+            return true;
+        }
 
         var columnCompareOrder = lhsColumns
             .Concat(rhsColumns)
