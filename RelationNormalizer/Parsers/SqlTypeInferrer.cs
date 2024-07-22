@@ -77,27 +77,27 @@ internal class SqlTypeInferrer
     /// <summary>
     /// Whether this column could be of the <c>bit</c> type.
     /// </summary>
-    private bool _possiblyBit = false;
+    private bool _possiblyBit = true;
 
     /// <summary>
     /// Whether this column could be of a numeric type.
     /// </summary>
-    private bool _possiblyNumber = false;
+    private bool _possiblyNumber = true;
 
     /// <summary>
     /// Whether this column could be of the <c>date</c> type.
     /// </summary>
-    private bool _possiblyDate = false;
+    private bool _possiblyDate = true;
 
     /// <summary>
     /// Whether this column could be of the <c>time</c> type.
     /// </summary>
-    private bool _possiblyTime = false;
+    private bool _possiblyTime = true;
 
     /// <summary>
     /// Whether this column could be of the <c>datetime</c> type.
     /// </summary>
-    private bool _possiblyDateTime = false;
+    private bool _possiblyDateTime = true;
 
     /// <summary>
     /// The minimum string length of values added, or null if no values have
